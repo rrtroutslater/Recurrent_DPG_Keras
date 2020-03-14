@@ -35,6 +35,6 @@ if __name__ == "__main__":
     critic = CriticRDPG()
     actor = ActorRDPG()
     agent = AgentRDPG(actor, critic)
+    actor.print_network_info()
 
-    print(tf.__version__)
     pass
