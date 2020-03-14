@@ -1,120 +1,63 @@
-from __future__ import print_function
-import tensorflow as tf
-from tensorflow import keras
-import numpy as np
+from ACBase import *
 
-class ActorRDPG():
-    """
-    """
+class ActorRDPG(ACBase):
     def __init__ (self,
-            feature_dim=64,
+            session,
+            obs_dim=64,
             act_dim=3,
             lstm_horizon=4,
             # training=False,
             training=True,
             learning_rate=0.005,
         ):
-
-        self.feature_dim = feature_dim
+        tf.compat.v1.disable_eager_execution()
+        self.set_network_type("actor")
+        
+        self.sess = session
+        self.obs_dim = obs_dim
         self.act_dim = act_dim
         if training:
             self.lstm_horizon = lstm_horizon
         else:
             self.lstm_horizon = 1
         self.learning_rate = learning_rate
+        self.training = training
 
         # actor, mu(o)
-        self.actor_net, self.actor_h, self.actor_c = self.make_act_net()
-        self.actor_weights = self.actor_net.trainable_weights
+        self.net, self.net_in, self.actor_h, self.actor_c = self.make_act_net()
+        self.net_weights = self.net.trainable_weights
 
         # actor target, mu'(o)
-        self.actor_net_t, self.actor_h_t, self.actor_c_t = self.make_act_net()
-        self.actor_weights_t = self.actor_net_t.trainable_weights
+        self.net_t, self.net_t_in, self.actor_h_t, self.actor_c_t = self.make_act_net()
+        self.net_t_weights = self.net_t.trainable_weights
 
         # gradients
-        self.q_grad, self.param_grad, self.input_feature_grad = self.initialize_gradients()
+        self.dL_da, self.dL_dW, self.dL_df = self.initialize_gradients()
+        self.grads = {
+            "dL/da": self.dL_da,
+            "dL/dW = dL/da * dmu/dW": self.dL_dW,
+            "dL/df = dL/da * dmu/df": self.dL_df,
+        }
 
         # gradient step
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
-        self.grad_step = self.optimizer.apply_gradients(zip(self.param_grad, self.actor_weights))
-        return
+        self.grad_step = self.optimizer.apply_gradients(zip(self.dL_dW, self.net_weights))
 
-    def initialize_gradients(self):
-        """
-        initialize gradients
-        tf.gradients(
-            y,  
-            x,
-            upstream_grads, (eg, dz/dy)
-        )
-        computes dy/dx * upstream_grads
-
-        returns:
-            placeholder for upstream gradient of Q function: dQ/da
-            gradient of action w.r.t. weights: da/dW
-            gradient of action w.r.t. feature input: da/df
-        """
-        # placeholder for gradients from Q function (result of backpropagation through Critic)
-        q_grad = tf.keras.backend.placeholder(
-            shape=[None, self.lstm_horizon, self.act_dim],
-            dtype=tf.float32,
-        )
-
-        # gradient of actor weights w.r.t. input action, given gradient of q function w.r.t. action
-        param_grad = tf.gradients(
-            self.actor_net.output,
-            self.actor_weights,
-            -q_grad,
-        )
-
-        # gradient of action w.r.t. feature input, to be backpropagated through feature extractor
-        input_feature_grad = tf.gradients(
-            self.actor_net.output,
-            self.actor_net.input,
-            -q_grad,
-        )
-        # feature extractor is not recurrent, so sum up grads from fall timesteps
-        input_feature_grad = tf.reduce_sum(input_feature_grad, axis=2)
-
-        return q_grad, param_grad, input_feature_grad
-
-    def print_network_info(self):
-        """
-        print model stats, layer shapes, etc
-        """
-        print("\nactor weights:")
-        for w in self.actor_weights:
-            print(w)
-            print(w.get_shape())
-
-        print("\nactor target weights:")
-        for w in self.actor_weights_t:
-            print(w)
-            print(w.get_shape())
-
-        print("\ngradients:")
-        print("dQ/da\n", self.q_grad.get_shape())
-        print("da/dW\n", self.param_grad)
-        print("da/df\n", self.input_feature_grad.get_shape())
-        return
-
-    def export_model_figure(self,
-            fnames=["ActorRDPG_architecture.png", "ActorRDPG_target_architecture.png"):
-        """
-        exports figure of model architecture 
-        """
-        plot_model(self.actor_net, to_file=fnames[0])
-        plot_model(self.actor_net_t, to_file=fnames[1])
+        self.sess.run(tf.compat.v1.global_variables_initializer())
         return
 
     def make_act_net(self):
         """
-        makes an actor network
+        define actor network architecture
 
-        returns keras model object
+        returns:
+            keras model 
+            input layer
+            hidden state h
+            hidden state c
         """
         net_in = keras.layers.Input(
-            shape=[self.lstm_horizon, self.feature_dim]
+            shape=[self.lstm_horizon, self.obs_dim]
         )
 
         lstm_out, h, c = keras.layers.LSTM(
@@ -132,9 +75,106 @@ class ActorRDPG():
         )(lstm_out)
 
         model = keras.Model(inputs=net_in, outputs=act)
-        return model, h, c
+        return model, net_in, h, c
 
-    # def 
+    def sample_act(self,
+            obs,
+            add_noise=False
+        ):
+        """
+        sampe action, a = mu(obs)
+
+        input:
+            obs: observation, numpy array of shape (N, num_timestep, obs_dim)
+            add_noise: flag indicating whether to add noise to action, used for exploration
+                of state/action space during training
+        
+        returns:
+            action, numpy array of shape (N, num_timestep, act_dim)
+        """
+        act = self.net.predict(obs)
+        if add_noise:
+            noise = np.random.randn(act.shape)
+            act += noise
+        return act
+
+    def sample_act_target(self,
+            obs
+        ):
+        """
+        sample action from target network, a' = mu'(obs')
+
+        input:
+            obs: observation, numpy array of shape (N, num_timestep, obs_dim)
+        
+        returns:
+            action, numpy array of shape (N, num_timestep, act_dim)
+        """
+        act_t = self.net_t.predict(obs)
+        return act_t
+
+    def initialize_gradients(self):
+        """
+        initialize necessary gradients
+        tf.gradients(
+            y,  
+            x,
+            upstream_grads, (eg, dz/dy)
+        )
+        computes dy/dx * upstream_grads
+
+        returns:
+            placeholder for upstream gradient of Bellman Loss w.r.t. action: dL/da
+            gradient of Bellman Loss w.r.t. network weights, a list
+            gradient of Bellman Loss w.r.t. observation input
+        """
+        # placeholder for result of backpropagation of Bellman Error through Critic Q(s,a)
+        dL_da = tf.keras.backend.placeholder(
+            shape=[None, self.lstm_horizon, self.act_dim],
+            dtype=tf.float32,
+        )
+
+        # list of gradients of Bellman Error w.r.t. actor (mu) weights: dmu/dW * dL/da, mu(f) = a
+        dL_dW = tf.gradients(
+            self.net.output,
+            self.net_weights,
+            -dL_da,
+        )
+
+        # gradient of Bellman Error w.r.t. obs input: dmu/df * dL/da, mu(f) = a
+        dL_df = tf.gradients(
+            self.net.output,
+            self.net_in,
+            -dL_da,
+        )
+        # obs extractor is not recurrent, so sum up grads from all timesteps
+        dL_df = tf.reduce_sum(dL_df, axis=2)
+
+        return dL_da, dL_dW, dL_df
+
+    def apply_gradients(self,
+            obs,
+            dL_da,
+            num_step=1,
+        ):
+        """
+        compute and apply gradient of loss w.r.t. network weights
+
+        inputs:
+            obs: series of observations, numpy array, 
+                shape (N, num_timestep, obs_dim)
+            dL_da: gradient of loss with respect to actor output, numpy array, 
+                shape (N, num_timestep, act_dim)
+            num_step: number of gradient steps to perform
+        """
+        for i in range(0, num_step):
+            self.sess.run([self.grad_step],
+                feed_dict={
+                    self.net_in: obs,
+                    self.dL_da: dL_da,
+                }
+            )
+        return
 
 
 if __name__ == "__main__":

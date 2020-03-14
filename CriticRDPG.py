@@ -1,14 +1,12 @@
-import tensorflow as tf 
-from tensorflow import keras
-import numpy as np
+from ACBase import *
 
-class CriticRDPG():
+class CriticRDPG(ACBase):
     """
     """
     def __init__ (self,
             ):
         
-
+        self.set_network_type("critic")
 
         return
 
