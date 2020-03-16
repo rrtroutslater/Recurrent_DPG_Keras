@@ -248,8 +248,17 @@ class CriticRDPG(ACBase):
             num_step=1,
         ):
         """
+        compute and apply gradient of Bellman Error w.r.t. Q network weights
+
+        inputs:
+            dL_da: gradient of loss with respect to Q value, numpy array, 
+                shape (N, num_timestep, 1)
+            act: series of actions, numpy array,
+                shape (N, num_timestep, act_dim)
+            obs: series of observations, numpy array, 
+                shape (N, num_timestep, obs_dim)
+            num_step: number of gradient steps to perform
         """
-        print('\nweights before update:\n', self.net_weights[0].eval(session=self.sess))
         for i in range(0, num_step):
             self.sess.run(
                 self.grad_step,
@@ -259,7 +268,6 @@ class CriticRDPG(ACBase):
                     self.obs_in: obs,
                 }
             )
-        print('\nweights after update:\n', self.net_weights[0].eval(session=self.sess))
         return
 
 
