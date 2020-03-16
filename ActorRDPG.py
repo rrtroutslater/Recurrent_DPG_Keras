@@ -3,13 +3,14 @@ from ACBase import *
 class ActorRDPG(ACBase):
     def __init__ (self,
             session,
-            obs_dim=64,
+            obs_dim=32,
             act_dim=3,
             lstm_horizon=4,
             # training=False,
-            training=True,
             learning_rate=0.005,
+            training=True,
         ):
+
         tf.compat.v1.disable_eager_execution()
         self.set_network_type("actor")
         
@@ -20,28 +21,28 @@ class ActorRDPG(ACBase):
             self.lstm_horizon = lstm_horizon
         else:
             self.lstm_horizon = 1
-        self.learning_rate = learning_rate
         self.training = training
+        self.learning_rate = learning_rate
 
         # actor, mu(o)
-        self.net, self.net_in, self.actor_h, self.actor_c = self.make_act_net()
+        self.net, self.obs_in, self.act, self.actor_h, self.actor_c = self.make_act_net()
         self.net_weights = self.net.trainable_weights
 
         # actor target, mu'(o)
-        self.net_t, self.net_t_in, self.actor_h_t, self.actor_c_t = self.make_act_net()
+        self.net_t, self.obs_t_in, self.act_t, self.actor_h_t, self.actor_c_t = self.make_act_net()
         self.net_t_weights = self.net_t.trainable_weights
 
         # gradients
-        self.dL_da, self.dL_dW, self.dL_df = self.initialize_gradients()
+        self.dL_da, self.dL_dWa, self.dL_do = self.initialize_gradients()
         self.grads = {
             "dL/da": self.dL_da,
-            "dL/dW = dL/da * dmu/dW": self.dL_dW,
-            "dL/df = dL/da * dmu/df": self.dL_df,
+            "dL/dWa = dL/da * dmu/dWa": self.dL_dWa,
+            "dL/df = dL/da * dmu/df": self.dL_do,
         }
 
         # gradient step
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
-        self.grad_step = self.optimizer.apply_gradients(zip(self.dL_dW, self.net_weights))
+        self.grad_step = self.optimizer.apply_gradients(zip(self.dL_dWa, self.net_weights))
 
         self.sess.run(tf.compat.v1.global_variables_initializer())
         return
@@ -53,10 +54,11 @@ class ActorRDPG(ACBase):
         returns:
             keras model 
             input layer
+            action output
             hidden state h
             hidden state c
         """
-        net_in = keras.layers.Input(
+        obs_in = keras.layers.Input(
             shape=[self.lstm_horizon, self.obs_dim]
         )
 
@@ -67,15 +69,15 @@ class ActorRDPG(ACBase):
             return_sequences=True,
             return_state=True, 
             stateful=False,
-        )(net_in)
+        )(obs_in)
 
         act = keras.layers.Dense(
             units=self.act_dim,
             activation="tanh",
         )(lstm_out)
 
-        model = keras.Model(inputs=net_in, outputs=act)
-        return model, net_in, h, c
+        model = keras.Model(inputs=obs_in, outputs=act)
+        return model, obs_in, act, h, c
 
     def sample_act(self,
             obs,
@@ -134,23 +136,23 @@ class ActorRDPG(ACBase):
             dtype=tf.float32,
         )
 
-        # list of gradients of Bellman Error w.r.t. actor (mu) weights: dmu/dW * dL/da, mu(f) = a
-        dL_dW = tf.gradients(
-            self.net.output,
+        # list of gradients of Bellman Error w.r.t. actor (mu) weights: dL/dWa = dmu/dWa * dL/da, mu(f) = a
+        dL_dWa = tf.gradients(
+            self.act,
             self.net_weights,
             -dL_da,
         )
 
-        # gradient of Bellman Error w.r.t. obs input: dmu/df * dL/da, mu(f) = a
-        dL_df = tf.gradients(
-            self.net.output,
-            self.net_in,
+        # gradient of Bellman Error w.r.t. obs input: dL/do = dmu/do * dL/da, mu(f) = a
+        dL_do = tf.gradients(
+            self.act,
+            self.obs_in,
             -dL_da,
         )
         # obs extractor is not recurrent, so sum up grads from all timesteps
-        dL_df = tf.reduce_sum(dL_df, axis=2)
+        dL_do = tf.reduce_sum(dL_do, axis=2)
 
-        return dL_da, dL_dW, dL_df
+        return dL_da, dL_dWa, dL_do
 
     def apply_gradients(self,
             obs,
@@ -170,7 +172,7 @@ class ActorRDPG(ACBase):
         for i in range(0, num_step):
             self.sess.run([self.grad_step],
                 feed_dict={
-                    self.net_in: obs,
+                    self.obs_in: obs,
                     self.dL_da: dL_da,
                 }
             )

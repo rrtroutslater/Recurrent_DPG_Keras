@@ -40,7 +40,7 @@ class AgentRDPG():
 
 if __name__ == "__main__":
     session = tf.compat.v1.Session()
-    critic = CriticRDPG()
+    critic = CriticRDPG(session)
     actor = ActorRDPG(session)
     agent = AgentRDPG(actor, critic)
     actor.print_network_info()
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     feature = []
     for i in range(0, 4):
-        feature.append(np.random.randn(64))
+        feature.append(np.random.randn(32))
     feature = np.array(feature)
     feature = np.expand_dims(feature, axis=0)
     
@@ -67,6 +67,5 @@ if __name__ == "__main__":
 
     print(actor.sample_act(feature))
     print(actor.sample_act_target(feature))
-
     actor.update_target_net()
     pass

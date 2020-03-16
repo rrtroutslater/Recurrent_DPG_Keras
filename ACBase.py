@@ -7,7 +7,7 @@ import datetime
 
 
 class ACBase():
-    def __init__(self):
+    def __init__(self,):
         """
         base class for actor critic models. contains common methods
         - saving / loading model
