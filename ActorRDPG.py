@@ -77,7 +77,7 @@ class ActorRDPG(ACBase):
         )(lstm_out)
 
         model = keras.Model(inputs=obs_in, outputs=act)
-        return model, obs_in, act, h, c
+        return model, obs_in, act, lstm_out, c
 
     def sample_act(self,
             obs,
@@ -94,6 +94,16 @@ class ActorRDPG(ACBase):
         returns:
             action, numpy array of shape (N, num_timestep, act_dim)
         """
+
+        h = self.sess.run(
+            self.actor_h,
+            feed_dict={
+                self.obs_in: obs
+            }
+        )
+        print('\nh sequence:\n', h)
+
+
         act = self.net.predict(obs)
         if add_noise:
             noise = np.random.randn(act.shape)
@@ -160,7 +170,7 @@ class ActorRDPG(ACBase):
             num_step=1,
         ):
         """
-        compute and apply gradient of loss w.r.t. network weights
+        compute and apply gradient of Bellman Error w.r.t. network weights
 
         inputs:
             obs: series of observations, numpy array, 
@@ -170,7 +180,8 @@ class ActorRDPG(ACBase):
             num_step: number of gradient steps to perform
         """
         for i in range(0, num_step):
-            self.sess.run([self.grad_step],
+            self.sess.run(
+                [self.grad_step],
                 feed_dict={
                     self.obs_in: obs,
                     self.dL_da: dL_da,
@@ -180,4 +191,17 @@ class ActorRDPG(ACBase):
 
 
 if __name__ == "__main__":
+    session = tf.compat.v1.Session()
+    actor = ActorRDPG(
+        session,
+        training=True,
+    )
+
+    np.random.seed(0)
+    obs = np.random.randn(1, 4, 32)
+    act = actor.sample_act(obs)
+    print('\nact:\n', act)
+
+    # TODO test the gradients
+
     pass

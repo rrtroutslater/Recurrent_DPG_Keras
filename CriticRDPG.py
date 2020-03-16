@@ -180,7 +180,7 @@ class CriticRDPG(ACBase):
 
         act_obs_in = tf.concat([act_in, obs_in], axis=2)
 
-        lstm_out, h, c = keras.layers.LSTM(
+        lstm_out, _, c = keras.layers.LSTM(
             units=32,
             activation="tanh",
             recurrent_activation="sigmoid",
@@ -195,7 +195,7 @@ class CriticRDPG(ACBase):
         )(lstm_out)
 
         model = keras.Model(inputs=[act_in, obs_in], outputs=q)
-        return model, act_in, obs_in, q, h, c
+        return model, act_in, obs_in, q, lstm_out, c
 
     def initialize_gradients(self,):
         """
@@ -259,7 +259,7 @@ class CriticRDPG(ACBase):
                 shape (N, num_timestep, obs_dim)
             num_step: number of gradient steps to perform
         """
-        for i in range(0, num_step):
+        for i in range(0, num_step):on available runtime hardware and constraints, this layer will choose different implementations (cuDNN-based or pure-TensorFlow) to maximize the performance. If a GPU is available and all the arguments to the layer meet the requirement of the CuDNN kernel (see below for details), the layer will use a fast cuDNN implementation.
             self.sess.run(
                 self.grad_step,
                 feed_dict={
@@ -272,13 +272,14 @@ class CriticRDPG(ACBase):
 
 
 if __name__ == "__main__":
+
     session = tf.compat.v1.Session()
+
     critic = CriticRDPG(
         session,
         training=True,
     )
     critic.print_network_info()
-
 
     # test feature extraction forward pass
     # make a stack of unique observations:
