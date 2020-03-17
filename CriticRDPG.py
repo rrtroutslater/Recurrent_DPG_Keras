@@ -1,5 +1,4 @@
 from ACBase import *
-from Encoder import make_encoder_net
 
 
 class CriticRDPG(ACBase):
@@ -8,9 +7,9 @@ class CriticRDPG(ACBase):
             img_dim=[16,90,3],
             obs_dim=32,
             act_dim=3,
-            lstm_horizon=4,
             learning_rate=0.005,
             training=True,
+            test_mode=False,
         ):
         
         tf.compat.v1.disable_eager_execution()
@@ -20,59 +19,45 @@ class CriticRDPG(ACBase):
         self.img_dim = img_dim
         self.obs_dim = obs_dim
         self.act_dim = act_dim
-        if training:
-            self.lstm_horizon = lstm_horizon
-        else:
-            self.lstm_horizon = 1
         self.training = training
         self.learning_rate = learning_rate
+        self.test_mode = test_mode
 
-        # encoder, takes stack of range images, returns extracted features
-        self.feature_extractor_net, self.img_in, self.obs = make_encoder_net(
-            img_dim,
-            obs_dim
-        )
-        self.feature_extractor_weights = self.feature_extractor_net.trainable_weights
+        self.lstm_units = 16
+
+        # placeholders for tracking hidden state over variable-length episodes
+        self.h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
+        self.c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
+        self.h_prev = np.random.randn(1, self.lstm_units)
+        self.c_prev = np.random.randn(1, self.lstm_units)
+        self.h_ph_t = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
+        self.c_ph_t = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
+        self.h_prev_t = np.random.randn(1, self.lstm_units)
+        self.c_prev_t = np.random.randn(1, self.lstm_units)
 
         # critic, Q(o, mu(o))
-        self.net, self.act_in, self.obs_in, self.q, self.critic_h, self.critic_c = self.make_Q_net()
+        self.net, self.act_in, self.obs_in, self.q, self.critic_h_sequence, self.critic_h, self.critic_c = self.make_Q_net()
         self.net_weights = self.net.trainable_weights
         self.net.compile(loss='mean_squared_error', optimizer='sgd')
 
+        # loss, used for grad calcs
+        self.y_ph = tf.keras.backend.placeholder(shape=[None, None, 1])
+        self.loss = tf.reduce_sum(tf.reduce_sum(tf.square(self.q - self.y_ph), axis=0), axis=0)
+        
         # critic target, Q'(o', mu(o'))
-        self.net_t, self.act_in_t, self.obs_in_t,  self.q_t, self.critic_h_t, self.critic_c_t = self.make_Q_net()
+        self.net_t, self.act_in_t, self.obs_in_t,  self.q_t, self.critic_h_t_sequence, self.critic_h_t, self.critic_c_t = self.make_Q_net()
         self.net_t_weights = self.net_t.trainable_weights
 
         # gradients
-        self.dL_dq, self.dL_dWq, self.dL_da, self.dL_do = self.initialize_gradients()
+        self.dL_dWq, self.dJ_da, self.dL_do = self.initialize_gradients()
         self.grads = {
-            "dL/dq": self.dL_dq,
             "dL/dWq = dL/dq * dQ/dWq": self.dL_dWq,
-            "dL/da = dL/dq * dQ/da": self.dL_da,
+            "dJ/da": self.dJ_da,
             "dL/do = dL/dq * dQ/do": self.dL_do,
         }
 
-        # gradient step
-        self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
-        self.grad_step = self.optimizer.apply_gradients(zip(self.dL_dWq, self.net_weights))
-
         self.sess.run(tf.compat.v1.global_variables_initializer())
         return
-
-    def sample_obs(self, 
-            img_in
-        ):
-        """
-        sample an observation = features extracted from stack of range images
-
-        inputs:
-            img_in: stack of range images, numpy array of shape (N, num_timestep, img_dim)
-
-        returns:
-            obs, numpy array of shape (N, num_timestep, obs_dim)
-        """
-        obs = self.feature_extractor_net.predict(img_in)[0]
-        return obs
 
     def sample_q(self,
             obs,
@@ -88,7 +73,40 @@ class CriticRDPG(ACBase):
         returns:
             q, numpy array of shape (N, num_timestep, 1)
         """
-        q = self.net.predict([act, obs])
+        if self.test_mode:
+            print('\nhidden state before forward pass:\n', self.h_prev)
+
+        q, h_prev, c_prev = self.sess.run(
+            [self.q, self.critic_h, self.critic_c],
+            feed_dict={
+                self.obs_in: obs,
+                self.act_in: act,
+                self.h_ph: self.h_prev,
+                self.c_ph: self.c_prev,
+            }
+        )
+
+        if self.test_mode:
+            # get entire hidden state history
+            hidden_state_history = self.sess.run(
+                [self.critic_h_sequence],
+                feed_dict={
+                    self.obs_in: obs,
+                    self.act_in: act,
+                    self.h_ph: self.h_prev, 
+                    self.c_ph: self.c_prev,
+                }
+            )            
+
+        # store the final hidden states from time t to be used as inital hidden states at time t+1 
+        self.h_prev = h_prev 
+        self.c_prev = c_prev
+
+        if self.test_mode:
+            print('\nq:\n', q)
+            print('\ncarry state:\n', self.c_prev)
+            print('\nhidden state after forward pass:\n', self.h_prev)
+            print('\nhidden state history:\n', hidden_state_history)
         return q
 
     def sample_q_target(self,
@@ -105,48 +123,77 @@ class CriticRDPG(ACBase):
         returns:
             q, numpy array of shape (N, num_timestep, 1)
         """
-        q = self.net_t.predict([act, obs])
-        return q
+        if self.test_mode:
+            print('\nhidden state before forward pass:\n', self.h_prev)
 
-    def get_dL_da(self,
-            dL_dq,
+        q_t, h_prev_t, c_prev_t = self.sess.run(
+            [self.q_t, self.critic_h_t, self.critic_c_t],
+            feed_dict={
+                self.obs_in_t: obs,
+                self.act_in_t: act,
+                self.h_ph_t: self.h_prev_t,
+                self.c_ph_t: self.c_prev_t,
+            }
+        )
+
+        if self.test_mode:
+            # get entire hidden state history
+            hidden_state_history = self.sess.run(
+                [self.critic_h_t_sequence],
+                feed_dict={
+                    self.obs_in_t: obs,
+                    self.act_in_t: act,
+                    self.h_ph_t: self.h_prev_t, 
+                    self.c_ph_t: self.c_prev_t,
+                }
+            )            
+
+        # store the final hidden states from time t to be used as inital hidden states at time t+1 
+        self.h_prev_t = h_prev_t 
+        self.c_prev_t = c_prev_t
+
+        if self.test_mode:
+            print('\nq:\n', q_t)
+            print('\ncarry state:\n', self.c_prev_t)
+            print('\nhidden state after forward pass:\n', self.h_prev_t)
+            print('\nhidden state history:\n', hidden_state_history)
+        return q_t
+
+    def get_dJ_da_critic(self,
             obs,
             act,
         ):
         """
-        compute gradient of Bellman Error w.r.t. action, a = mu(o)
+        compute gradient of objective w.r.t. action, a = mu(o)
 
         inputs:
-            dL_dq: upstream gradient of Bellman Error w.r.t. q value, numpy array,
-                shape (N, num_timestep, 1)
             obs: extracted features, numpy array,
                 shape (N, num_timestep, obs_dim)
             act: actions, numpy array,
                 shape (N, num_timestep, act_dim)
 
         returns: 
-            dL/da, gradient of Bellman Loss w.r.t. action
+            dJ/da, gradient of objective w.r.t. action
         """
-        dL_da = self.sess.run(
-            self.dL_da, 
+        dJ_da = self.sess.run(
+            self.dJ_da, 
             feed_dict={
-                self.dL_dq: dL_dq,
                 self.obs_in: obs,
                 self.act_in: act,
             }
         )
-        return dL_da[0]
+        return dJ_da[0]
 
-    def get_dL_do(self,
-            dL_dq,
+    def get_dL_do_critic(self,
+            labels,
             obs,
             act,
         ):
         """
-        compute gradient of Bellman Error w.r.t. observation
+        compute gradient of loss function w.r.t. observation, to be backpropagated through encoder
 
         inputs:
-            dL_dq: upstream gradient of Bellman Error w.r.t. q value, numpy array,
+            labels: training labels for DPG Bellman error, numpy array,
                 shape (N, num_timestep, 1)
             obs: extracted features, numpy array,
                 shape (N, num_timestep, obs_dim)
@@ -159,7 +206,7 @@ class CriticRDPG(ACBase):
         dL_do = self.sess.run(
             self.dL_do, 
             feed_dict={
-                self.dL_dq: dL_dq,
+                self.y_ph: labels,
                 self.obs_in: obs,
                 self.act_in: act,
             }
@@ -169,19 +216,18 @@ class CriticRDPG(ACBase):
     def make_Q_net(self,):
         """
         """
-
         act_in = tf.keras.layers.Input(
-            shape=[self.lstm_horizon, self.act_dim]
+            shape=[None, self.act_dim]
         )
 
         obs_in = tf.keras.layers.Input(
-            shape=[self.lstm_horizon, self.obs_dim]
+            shape=[None, self.obs_dim]
         )
 
         act_obs_in = tf.concat([act_in, obs_in], axis=2)
 
-        lstm_out, _, c = keras.layers.LSTM(
-            units=32,
+        lstm_sequence, h, c = keras.layers.LSTM(
+            units=self.lstm_units,
             activation="tanh",
             recurrent_activation="sigmoid",
             return_sequences=True,
@@ -192,10 +238,10 @@ class CriticRDPG(ACBase):
         q = keras.layers.Dense(
             units=1,
             activation='sigmoid'
-        )(lstm_out)
+        )(lstm_sequence)
 
         model = keras.Model(inputs=[act_in, obs_in], outputs=q)
-        return model, act_in, obs_in, q, lstm_out, c
+        return model, act_in, obs_in, q, lstm_sequence, h, c
 
     def initialize_gradients(self,):
         """
@@ -209,65 +255,40 @@ class CriticRDPG(ACBase):
             gradient of Bellman Error w.r.t. observation input
                 backpropagated through feature extractor during training
         """
-
-        # placeholder for gradient of Bellman Error w.r.t. Q function output
-        dL_dq = tf.keras.backend.placeholder(
-            shape=[None, self.lstm_horizon, 1],
-            dtype=tf.float32,
-        )
-
         # list of gradients of Bellman Error w.r.t. Q function weights: dL/dWq = dL/dq * dQ/dWq
         dL_dWq = tf.gradients(
-            self.q,
+            self.loss,
             self.net_weights,
-            -dL_dq,
         )
 
-        # gradient of Bellman Error w.r.t. Q function action input: dL/da = dL/dq * dq/da
-        dL_da = tf.gradients(
+        # gradient of objective w.r.t. Q function action input: dJ/da
+        dJ_da = tf.gradients(
             self.q,
             self.act_in,
-            -dL_dq,
         )
 
         # gradient of Bellman Error w.r.t. Q function obs input: dL/do = dL/dq * dq/do
         dL_do = tf.gradients(
-            self.q, 
-            self.obs_in,
-            -dL_dq,
+            self.loss,
+            # self.loss(self.q, self.label_q_ph),
+            self.obs_in
         )
         # obs extractor is not recurrent, so sum up grads from all timesteps
         dL_do = tf.reduce_sum(dL_do, axis=2)
 
-        return dL_dq, dL_dWq, dL_da, dL_do
+        return dL_dWq, dJ_da, dL_do
 
-    def apply_gradients_to_Q_net(self,
-            dL_dq,
-            act,
+    def propagate_critic_episode(self,  
             obs,
-            num_step=1,
+            obs_target,
+            act,
+            act_target,
         ):
         """
-        compute and apply gradient of Bellman Error w.r.t. Q network weights
-
-        inputs:
-            dL_da: gradient of loss with respect to Q value, numpy array, 
-                shape (N, num_timestep, 1)
-            act: series of actions, numpy array,
-                shape (N, num_timestep, act_dim)
-            obs: series of observations, numpy array, 
-                shape (N, num_timestep, obs_dim)
-            num_step: number of gradient steps to perform
+        forward propagate data before an episode in order to update hidden states for network and target
         """
-        for i in range(0, num_step):on available runtime hardware and constraints, this layer will choose different implementations (cuDNN-based or pure-TensorFlow) to maximize the performance. If a GPU is available and all the arguments to the layer meet the requirement of the CuDNN kernel (see below for details), the layer will use a fast cuDNN implementation.
-            self.sess.run(
-                self.grad_step,
-                feed_dict={
-                    self.dL_dq: dL_dq,
-                    self.act_in: act,
-                    self.obs_in: obs,
-                }
-            )
+        self.sample_q(obs, act)
+        self.sample_q_target(obs_target, act_target)
         return
 
 
@@ -278,37 +299,54 @@ if __name__ == "__main__":
     critic = CriticRDPG(
         session,
         training=True,
+        test_mode=True,
     )
-    critic.print_network_info()
 
-    # test feature extraction forward pass
+    np.random.seed(0)
+
+    # test forward pass on series of single observations
+    if 0:
+        for i in range(0, 4):
+            print('\n--------------')
+            obs = np.random.randn(1, 1, 32)
+            act = np.random.randn(1, 1, 3)
+            q = critic.sample_q(obs, act)
+
     # make a stack of unique observations:
-    obs = []
-    for i in range(0, 4):
-        img = np.random.randn(1, 16, 90, 3)
-        o = critic.sample_obs(img)
-        print(o.shape)
-        obs.append(o)
-    obs = np.array([obs])
-    print('\nobs shape:\t', obs.shape)
-
-    # test dL_da
-    dL_dq = np.random.randn(1, 4, 1)
+    obs = np.random.randn(1, 4, 32)
     act = np.random.randn(1, 4, 3)
-    dL_da = critic.get_dL_da(dL_dq, obs, act)
-    print('\ndL/da:\n', dL_da)
 
-    # test dL_do
-    dL_do = critic.get_dL_do(dL_dq, obs, act)
-    print('\ndL/do:\n', dL_do)
+    # test forward pass on batch
+    if 0:
+        q = critic.sample_q_target(obs, act)
 
-    # test q
-    q = critic.sample_q(obs, act)
-    print('\nq:\n', q)
-    q_t = critic.sample_q_target(obs, act)
-    print('\nq\':\n', q_t)
+    # test gradients
+    if 0:
+        # test dJ_da
+        act = np.random.randn(1, 4, 3)
+        dJ_da = critic.get_dJ_da_critic(obs, act)
+        print('\ndL/da:\n', dJ_da)
 
-    # test gradient update to Q network
-    critic.apply_gradients_to_Q_net(dL_dq, act, obs)
+        # test dL_do
+        labels = np.random.randn(1,4,1)
+        dL_do = critic.get_dL_do_critic(labels, obs, act)
+        print('\ndL/do:\n', dL_do)
+
+    if 0:
+        # test q
+        act = np.random.randn(1, 4, 3)
+        q = critic.sample_q(obs, act)
+        print('\nq:\n', q)
+        q_t = critic.sample_q_target(obs, act)
+        print('\nq\':\n', q_t)
+
+    # test training 
+    if 1:
+        act = np.random.randn(1, 4, 3)
+        obs = np.random.randn(1, 4, 32)
+        y = np.random.randn(1, 4, 1)
+        loss = critic.net.train_on_batch([act, obs], y)
+        print(loss)
+
     pass
 

@@ -81,10 +81,8 @@ class ACBase():
             net_t_fname,
         ):
         """
-        load network weights from file
+        load network weights from file        self.tau = tau
 
-        inputs:
-            net_fname: filename of saved model
             net_t_fname: filename of saved target model
         """
         return
@@ -116,10 +114,8 @@ class ACBase():
         """
         weights = self.net.get_weights()
         target_weights = self.net_t.get_weights()
-        print('\nweights before:\n', target_weights[0])
         for i in range(0, len(weights)):
             target_weights[i] = tau * weights[i] + (1 - tau) * target_weights[i]
-        print('\nweights after:\n', target_weights[0])
 
         self.net_t.set_weights(target_weights)
         return
