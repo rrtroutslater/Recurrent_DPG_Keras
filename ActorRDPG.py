@@ -221,7 +221,7 @@ class ActorRDPG(ACBase):
             -dJ_da,
         )
         # obs extractor is not recurrent, so sum up gradients from all timesteps
-        dJ_do = tf.reduce_sum(dJ_do, axis=2)
+        # dJ_do = tf.reduce_sum(dJ_do, axis=2)
 
         return dJ_da, dJ_dWa, dJ_do
 
@@ -281,7 +281,7 @@ class ActorRDPG(ACBase):
                 self.c_ph: self.c_prev,
             }
         )
-        return dJ_do
+        return dJ_do[0]
 
     def propagate_actor_episode(self,  
             obs,
@@ -300,7 +300,7 @@ if __name__ == "__main__":
     session = tf.compat.v1.Session()
 
     # testing forward pass with hidden state maintenance for a sequence of observations (ie, inference time)
-    if 1:
+    if 0:
         actor = ActorRDPG(
             session,
             training=False,
@@ -342,7 +342,7 @@ if __name__ == "__main__":
         actor.apply_gradients(o, dJ_da, num_step=2)
 
     # test gradient
-    if 0:
+    if 1:
         lstm_horizon = 4
         actor = ActorRDPG(
             session,

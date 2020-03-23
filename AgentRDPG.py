@@ -3,9 +3,6 @@ from CriticRDPG import *
 from Encoder import *
 import matplotlib.pyplot as plt
 
-"""
-"""
-
 
 class AgentRDPG():
     def __init__(self,
@@ -88,14 +85,13 @@ class AgentRDPG():
                 # grad step on actor
                 self.actor.apply_gradients(obs, dJ_da, num_step=1)
 
-
                 # grad step on encoder
-                # self.encoder.apply_gradients_to_feature_extractor(
-                #     dL_do[0],
-                #     dJ_do[0],
-                #     episode['img_0'],
-                #     num_step=1,
-                # )
+                self.encoder.apply_gradients_to_feature_extractor(
+                    dL_do[0],
+                    dJ_do[0],
+                    episode['img_0'],
+                    num_step=1,
+                )
 
                 # update target networks
                 self.actor.update_target_net()
@@ -106,8 +102,6 @@ class AgentRDPG():
         plt.xlabel('iter')
         plt.ylabel('')
         plt.show()
-
-
 
         return
 
@@ -166,6 +160,8 @@ if __name__ == "__main__":
 
     dataset = make_dummy_dataset()
     # agent.extract_episode(dataset)
-    agent.train_rdpg(dataset, num_episode=1, num_update=10000)
+    agent.train_rdpg(dataset, num_episode=1, num_update=50)
+
+
 
     pass

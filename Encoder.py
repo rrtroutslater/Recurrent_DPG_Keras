@@ -62,6 +62,10 @@ class Encoder():
             dtype=tf.float32,
         )
 
+        print(self.dL_dfa.get_shape())
+        print(self.dL_dfQ.get_shape())
+
+
         # gradient of Bellman Error w.r.t. feature extractor weights: dL/dWf = (dL/dfa + b * dL_dfQ) * df_dWf
         self.dL_dWf = tf.gradients(
             self.obs, 
@@ -175,9 +179,9 @@ if __name__ == "__main__":
     # print('\nobs shape:\n', obs.shape)
 
     # test gradient
-    dL_do = np.random.randn(1,1,32)
-    dJ_da = np.random.randn(1,1,32)
-    img_in = np.random.randn(10, 16, 90 ,3)
-    encoder.apply_gradients_to_feature_extractor(dL_do, dJ_da, img_in, 1)
+    # dL_do = np.random.randn(10,32)
+    # dJ_da = np.random.randn(10,32)
+    # img_in = np.random.randn(10, 16, 90 ,3)
+    # encoder.apply_gradients_to_feature_extractor(dL_do, dJ_da, img_in, 1)
 
     pass

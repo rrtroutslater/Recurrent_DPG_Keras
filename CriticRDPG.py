@@ -211,7 +211,7 @@ class CriticRDPG(ACBase):
                 self.act_in: act,
             }
         )
-        return dL_do
+        return dL_do[0]
 
     def make_Q_net(self,):
         """
@@ -274,7 +274,7 @@ class CriticRDPG(ACBase):
             self.obs_in
         )
         # obs extractor is not recurrent, so sum up grads from all timesteps
-        dL_do = tf.reduce_sum(dL_do, axis=2)
+        # dL_do = tf.reduce_sum(dL_do, axis=2)
 
         return dL_dWq, dJ_da, dL_do
 
@@ -321,7 +321,7 @@ if __name__ == "__main__":
         q = critic.sample_q_target(obs, act)
 
     # test gradients
-    if 0:
+    if 1:
         # test dJ_da
         act = np.random.randn(1, 4, 3)
         dJ_da = critic.get_dJ_da_critic(obs, act)
@@ -341,7 +341,7 @@ if __name__ == "__main__":
         print('\nq\':\n', q_t)
 
     # test training 
-    if 1:
+    if 0:
         act = np.random.randn(1, 4, 3)
         obs = np.random.randn(1, 4, 32)
         y = np.random.randn(1, 4, 1)
