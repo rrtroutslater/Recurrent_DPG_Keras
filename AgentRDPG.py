@@ -6,12 +6,12 @@ import matplotlib.pyplot as plt
 
 class AgentRDPG():
     def __init__(self,
-            session,
-            actor,
-            critic,
-            encoder,
-            lstm_horizon=10,
-        ):
+                 session,
+                 actor,
+                 critic,
+                 encoder,
+                 lstm_horizon=10,
+                 ):
 
         self.sess = session
         self.actor = actor
@@ -22,14 +22,13 @@ class AgentRDPG():
         self.learning_rate_actor = self.actor.learning_rate
         self.learning_rate_critic = self.critic.learning_rate
 
-
         return
 
     def train_rdpg(self,
-            dataset,
-            num_episode=20,
-            num_update=5, 
-        ):
+                   dataset,
+                   num_episode=20,
+                   num_update=5,
+                   ):
         """
         """
 
@@ -40,8 +39,10 @@ class AgentRDPG():
             data_pre_episode, episode = self.extract_episode(dataset)
 
             # extract observations (features) from images in dataset
-            obs_pre_episode = self.encoder.sample_obs(data_pre_episode['img_0'])
-            obs_target_pre_episode = self.encoder.sample_obs(data_pre_episode['img_1'])
+            obs_pre_episode = self.encoder.sample_obs(
+                data_pre_episode['img_0'])
+            obs_target_pre_episode = self.encoder.sample_obs(
+                data_pre_episode['img_1'])
             obs = self.encoder.sample_obs(episode['img_0'])
             obs_target = self.encoder.sample_obs(episode['img_1'])
             # act_pre_episode = data_pre_episode['act']
@@ -49,11 +50,14 @@ class AgentRDPG():
             # forward propagate through all pre-episode data to initialize hidden state
             # 1) get pre-episode actions from actor network, update hidden states of actor, actor target
             act_pre_episode = self.actor.sample_act(obs_pre_episode)
-            act_target_pre_episode = self.actor.sample_act_target(obs_target_pre_episode)
+            act_target_pre_episode = self.actor.sample_act_target(
+                obs_target_pre_episode)
 
             # 2) use actions and obs before episode to update Q network hidden states
-            q_pre_episode = self.critic.sample_q(obs_pre_episode, act_pre_episode)
-            q_target_pre_episode = self.critic.sample_q_target(obs_target_pre_episode, act_target_pre_episode)
+            q_pre_episode = self.critic.sample_q(
+                obs_pre_episode, act_pre_episode)
+            q_target_pre_episode = self.critic.sample_q_target(
+                obs_target_pre_episode, act_target_pre_episode)
 
             # get observations, actions, rewards which occurred during episode
             obs = self.encoder.sample_obs(episode['img_0'])
@@ -75,7 +79,7 @@ class AgentRDPG():
                 act_for_grad = self.actor.sample_act(obs)
                 dJ_da = self.critic.get_dJ_da_critic(obs, act_for_grad)
                 # NOTE: this must be done before the train_on_batch below
-                dL_do = self.critic.get_dL_do_critic(y, obs, act_for_grad) 
+                dL_do = self.critic.get_dL_do_critic(y, obs, act_for_grad)
                 dJ_do = self.actor.get_dJ_do_actor(obs, dJ_da)
 
                 # take a gradient step on the Q network weights
@@ -106,10 +110,10 @@ class AgentRDPG():
         return
 
     def update_ac_hidden_state(self,
-            obs_t,
-            obs_tp1,
-            act_t,
-        ):
+                               obs_t,
+                               obs_tp1,
+                               act_t,
+                               ):
         """
         """
         self.actor.propagate_actor_episode(obs_t, obs_tp1)
@@ -117,8 +121,8 @@ class AgentRDPG():
         return
 
     def extract_episode(self,
-            dataset
-        ):
+                        dataset
+                        ):
         """
         """
         n = dataset['img_0'].shape[0]
@@ -132,7 +136,7 @@ class AgentRDPG():
 
         episode = {}
         episode['img_0'] = dataset['img_0'][idx:idx+self.lstm_horizon]
-        episode['img_1'] = dataset['img_1'][idx+1 : idx + self.lstm_horizon + 1]
+        episode['img_1'] = dataset['img_1'][idx+1: idx + self.lstm_horizon + 1]
         episode['act'] = dataset['act'][:, idx:idx+self.lstm_horizon, :]
         episode['reward'] = dataset['reward'][:, idx:idx+self.lstm_horizon, :]
         return data_pre_episode, episode
@@ -153,15 +157,13 @@ def make_dummy_dataset(num_sample=100):
 if __name__ == "__main__":
     np.random.seed(0)
     session = tf.compat.v1.Session()
-    critic = CriticRDPG(session, )#test_mode=True)
-    actor = ActorRDPG(session, )#test_mode=True)
-    encoder = Encoder(session, )#test_mode=True)
+    critic = CriticRDPG(session, )  # test_mode=True)
+    actor = ActorRDPG(session, )  # test_mode=True)
+    encoder = Encoder(session, )  # test_mode=True)
     agent = AgentRDPG(session, actor, critic, encoder)
 
     dataset = make_dummy_dataset()
     # agent.extract_episode(dataset)
     agent.train_rdpg(dataset, num_episode=1, num_update=50)
-
-
 
     pass
