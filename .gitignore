@@ -1,2 +1,4 @@
 *.pyc
 *.png
+
+/__pycache__
