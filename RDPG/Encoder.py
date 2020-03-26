@@ -1,3 +1,4 @@
+from __future__ import print_function
 import tensorflow as tf 
 from tensorflow import keras
 import numpy as np
@@ -42,7 +43,13 @@ class Encoder():
     def sample_obs(self,
             img_in,
         ):
-        obs = self.net.predict(img_in)
+        # obs = self.net.predict(img_in)
+        obs = self.sess.run(
+            self.obs,
+            feed_dict={
+                self.img_in: img_in
+            }
+        )
         return np.expand_dims(obs, axis=0)
 
     def initialize_gradients(self,):
@@ -173,10 +180,10 @@ if __name__ == "__main__":
     encoder = Encoder(session, test_mode=True)
 
     # test forward pass
-    # img = np.random.randn(1, 16, 90, 3)
-    # obs = encoder.sample_obs(img)
-    # print('\nobs:\n', obs)
-    # print('\nobs shape:\n', obs.shape)
+    img = np.random.randn(1, 16, 90, 3)
+    obs = encoder.sample_obs(img)
+    print('\nobs:\n', obs)
+    print('\nobs shape:\n', obs.shape)
 
     # test gradient
     # dL_do = np.random.randn(10,32)

@@ -127,6 +127,11 @@ class AgentRDPG():
         q = self.critic.sample_q(obs, act)
         return q
 
+    def get_obs(self, 
+            img):
+        """ TODO """
+        obs = self.encoder.sample_obs(img)
+        return obs
 
     def extract_episode(self,
                         dataset
@@ -173,6 +178,8 @@ if __name__ == "__main__":
 
     dataset = make_dummy_dataset()
     # agent.extract_episode(dataset)
-    agent.train_rdpg(dataset, num_episode=4, num_update=1)
+    agent.train_rdpg(dataset, num_episode=200, num_update=1)
+
+    # print(agent.encoder.sample_obs(np.random.randn(1, 16, 90, 3)).shape)
 
     pass
