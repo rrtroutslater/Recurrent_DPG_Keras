@@ -26,14 +26,20 @@ class CriticRDPG(ACBase):
         self.lstm_units = 16
 
         # placeholders for tracking hidden state over variable-length episodes
-        self.h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
-        self.c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
-        self.h_prev = np.random.randn(1, self.lstm_units)
-        self.c_prev = np.random.randn(1, self.lstm_units)
-        self.h_ph_t = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
-        self.c_ph_t = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
-        self.h_prev_t = np.random.randn(1, self.lstm_units)
-        self.c_prev_t = np.random.randn(1, self.lstm_units)
+        self.h_ph = tf.keras.backend.placeholder(
+            shape=[1, self.lstm_units])
+        self.c_ph = tf.keras.backend.placeholder(
+            shape=[1, self.lstm_units])
+        self.h_ph_t = tf.keras.backend.placeholder(
+            shape=[None, 1, self.lstm_units], dtype=tf.float32)
+        self.c_ph_t = tf.keras.backend.placeholder(
+            shape=[None, 1, self.lstm_units], dtype=tf.float32)
+
+        # hidden and carry state numpy arrays
+        self.h_prev = None
+        self.c_prev = None
+        self.h_prev_t = None
+        self.c_prev_t = None
 
         # critic, Q(o, mu(o))
         self.net, self.act_in, self.obs_in, self.q, self.critic_h_sequence, self.critic_h, self.critic_c = self.make_Q_net()
@@ -82,8 +88,6 @@ class CriticRDPG(ACBase):
             feed_dict={
                 self.obs_in: obs,
                 self.act_in: act,
-                self.h_ph: self.h_prev,
-                self.c_ph: self.c_prev,
             }
         )
 
@@ -94,8 +98,6 @@ class CriticRDPG(ACBase):
                 feed_dict={
                     self.obs_in: obs,
                     self.act_in: act,
-                    self.h_ph: self.h_prev,
-                    self.c_ph: self.c_prev,
                 }
             )
 
@@ -125,15 +127,13 @@ class CriticRDPG(ACBase):
             q, numpy array of shape (N, num_timestep, 1)
         """
         if self.test_mode:
-            print('\nhidden state before forward pass:\n', self.h_prev)
+            print('\nhidden state before forward pass:\n', self.h_prev_t)
 
         q_t, h_prev_t, c_prev_t = self.sess.run(
             [self.q_t, self.critic_h_t, self.critic_c_t],
             feed_dict={
                 self.obs_in_t: obs,
                 self.act_in_t: act,
-                self.h_ph_t: self.h_prev_t,
-                self.c_ph_t: self.c_prev_t,
             }
         )
 
@@ -144,8 +144,6 @@ class CriticRDPG(ACBase):
                 feed_dict={
                     self.obs_in_t: obs,
                     self.act_in_t: act,
-                    self.h_ph_t: self.h_prev_t,
-                    self.c_ph_t: self.c_prev_t,
                 }
             )
 
@@ -271,11 +269,8 @@ class CriticRDPG(ACBase):
         # gradient of Bellman Error w.r.t. Q function obs input: dL/do = dL/dq * dq/do
         dL_do = tf.gradients(
             self.loss,
-            # self.loss(self.q, self.label_q_ph),
             self.obs_in
         )
-        # obs extractor is not recurrent, so sum up grads from all timesteps
-        # dL_do = tf.reduce_sum(dL_do, axis=2)
 
         return dL_dWq, dQ_da, dL_do
 
@@ -317,9 +312,19 @@ if __name__ == "__main__":
     obs = np.random.randn(1, 4, 32)
     act = np.random.randn(1, 4, 3)
 
-    # test forward pass on batch
-    if 0:
+    # test forward pass on batch with hidden state propagation
+    if 1:
+        # target
+        print("\ncritic target:\n")
         q = critic.sample_q_target(obs, act)
+        q_1 = critic.sample_q_target(np.random.randn(
+            1, 1, 32), np.random.randn(1, 1, 3))
+
+        print("\ncritic:\n")
+        # actor
+        q = critic.sample_q(obs, act)
+        q_1 = critic.sample_q(np.random.randn(
+            1, 1, 32), np.random.randn(1, 1, 3))
 
     # test gradients
     if 1:

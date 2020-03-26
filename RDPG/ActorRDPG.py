@@ -20,7 +20,6 @@ class ActorRDPG(ACBase):
         self.learning_rate = learning_rate
         self.training = training
         self.test_mode = test_mode
-
         self.lstm_units = 16
 
         # placeholders for tracking hidden state over variable-length episodes
@@ -34,26 +33,19 @@ class ActorRDPG(ACBase):
             shape=[None, 1, self.lstm_units], dtype=tf.float32)
 
         # hidden and carry state numpy arrays
-        # self.h_prev = np.random.randn(1, self.lstm_units)
-        # self.c_prev = np.random.randn(1, self.lstm_units)
-        # self.h_prev_t = np.random.randn(None, 1, self.lstm_units)
-        # self.c_prev_t = np.random.randn(None, 1, self.lstm_units)
         self.h_prev = None
         self.c_prev = None
         self.h_prev_t = None
         self.c_prev_t = None
 
         # actor, mu(o)
-        self.net, self.obs_in, self.act, self.actor_h_sequence, self.actor_h, self.actor_c = self.make_act_net()
+        self.net, self.obs_in, self.act, self.actor_h_sequence, self.actor_h, \
+            self.actor_c, self.lstm_cell = self.make_act_net()
         self.net_weights = self.net.trainable_weights
-        print('obs in shape:\t', self.obs_in.get_shape())
-        print('act shape:\t', self.obs_in.get_shape())
-        print('h shape:\t', self.actor_h.get_shape())
-        print('h seq shape:\t', self.actor_h_sequence.get_shape())
-        print('c shape:\t', self.actor_c.get_shape())
 
         # actor target, mu'(o)
-        self.net_t, self.obs_t_in, self.act_t, self.actor_h_t_sequence, self.actor_h_t, self.actor_c_t = self.make_act_net()
+        self.net_t, self.obs_t_in, self.act_t, self.actor_h_t_sequence, self.actor_h_t, \
+            self.actor_c_t, _ = self.make_act_net()
         self.net_t_weights = self.net_t.trainable_weights
 
         # gradients
@@ -88,28 +80,31 @@ class ActorRDPG(ACBase):
             shape=[None, self.obs_dim],
         )
 
-        lstm_out, h, c = keras.layers.LSTM(
-            units=self.lstm_units,
+        lstm_cell = tf.keras.layers.LSTMCell(
+            self.lstm_units,
             activation="tanh",
             recurrent_activation="sigmoid",
+            kernel_initializer='glorot_uniform',
+            recurrent_initializer='glorot_uniform',
+            bias_initializer='zeros',
+        )
+
+        lstm = tf.keras.layers.RNN(
+            lstm_cell,
             return_sequences=True,
             return_state=True,
             stateful=False,
-            # )(obs_in, initial_state=[self.h_ph, self.c_ph])
-        )(obs_in)
+        )
+
+        lstm_out, h, c = lstm(obs_in)
 
         act = keras.layers.Dense(
             units=self.act_dim,
             activation="tanh",
         )(lstm_out)
 
-        # act = keras.layers.Dense(
-        #     units=self.act_dim,
-        #     activation="tanh",
-        # )(h)
-
         model = keras.Model(inputs=obs_in, outputs=act)
-        return model, obs_in, act, lstm_out, h, c
+        return model, obs_in, act, lstm_out, h, c, lstm_cell
 
     def sample_act(self,
                    obs,
@@ -129,17 +124,10 @@ class ActorRDPG(ACBase):
         if self.test_mode:
             print('\nhidden state before forward pass:\n', self.h_prev)
 
-        if self.h_prev is None:
-            self.h_prev = np.random.randn(obs.shape[0], 1, self.lstm_units)
-        if self.c_prev is None:
-            self.c_prev = np.random.randn(obs.shape[0], 1, self.lstm_units)
-
         act, h_prev, c_prev = self.sess.run(
             [self.act, self.actor_h, self.actor_c],
             feed_dict={
                 self.obs_in: obs,
-                # self.h_ph: self.h_prev,
-                # self.c_ph: self.c_prev,
             }
         )
 
@@ -150,8 +138,6 @@ class ActorRDPG(ACBase):
                 [self.actor_h_sequence],
                 feed_dict={
                     self.obs_in: obs,
-                    # self.h_ph: self.h_prev,
-                    # self.c_ph: self.c_prev,
                 }
             )
 
@@ -182,29 +168,20 @@ class ActorRDPG(ACBase):
         if self.test_mode:
             print('\nhidden state before forward pass:\n', self.h_prev_t)
 
-        if self.h_prev_t is None:
-            self.h_prev_t = np.random.randn(obs.shape[0], 1, self.lstm_units)
-        if self.c_prev is None:
-            self.c_prev_t = np.random.randn(obs.shape[0], 1, self.lstm_units)
-
         act_t, h_prev_t, c_prev_t = self.sess.run(
             [self.act_t, self.actor_h_t, self.actor_c_t],
             feed_dict={
                 self.obs_t_in: obs,
-                # self.h_ph: self.h_prev_t,
-                # self.c_ph: self.c_prev_t,
             }
         )
 
-        hidden_state_history = []
         # get entire hidden state history, for testing
         if self.test_mode:
+            hidden_state_history = []
             hidden_state_history = self.sess.run(
                 [self.actor_h_t_sequence],
                 feed_dict={
                     self.obs_t_in: obs,
-                    # self.h_ph: self.h_prev_t,
-                    # self.c_ph: self.c_prev_t,
                 }
             )
 
@@ -239,7 +216,6 @@ class ActorRDPG(ACBase):
             shape=[None, None, self.act_dim],
             dtype=tf.float32,
         )
-        print("dQ_da shape at declaration:\t", dQ_da.get_shape())
 
         # list of gradients of objective w.r.t. actor (mu) weights: dJ/dWa = dmu/dWa * dQ/da, mu(f) = a.
         # comes from objective maximization via policy gradient.
@@ -255,9 +231,6 @@ class ActorRDPG(ACBase):
             self.obs_in,
             -dQ_da,
         )
-        # obs extractor is not recurrent, so sum up gradients from all timesteps
-        # dJ_do = tf.reduce_sum(dJ_do, axis=2)
-
         return dQ_da, dJ_dWa, dJ_do
 
     def apply_gradients(self,
@@ -275,39 +248,19 @@ class ActorRDPG(ACBase):
                 shape (N, num_timestep, act_dim)
             num_step: number of gradient steps to perform
         """
-        print("-----------------------------")
-        print("h_ph shape:\t", self.h_ph.get_shape())
-        print("c_ph shape:\t", self.c_ph.get_shape())
-        print("h shape:\t", self.actor_h.get_shape())
-        print("c shape:\t", self.actor_c.get_shape())
-        print("dQ_da expected:\t", self.dQ_da.get_shape())
-        print("dQ_da input:\t", dQ_da.shape)
-        print("obs expected:\t", self.obs_in.get_shape())
-        print("obs input:\t", obs.shape)
-
-        if self.h_prev is None:
-            self.h_prev = np.random.randn(obs.shape[0], 1, self.lstm_units)
-        if self.c_prev is None:
-            self.c_prev = np.random.randn(obs.shape[0], 1, self.lstm_units)
-        print("h_prev shape:\t", self.h_prev.shape)
-        print("c_prev shape:\t", self.c_prev.shape)
 
         for i in range(0, num_step):
             if self.test_mode:
                 print('----------\nweights before update:',
                       self.net_weights[0].eval(session=self.sess))
 
-            # act forward propagation
-            act = self.sess.run(
-                self.act,
-                feed_dict={
-                    self.obs_in: obs,
-                    # self.h_ph: self.h_prev,
-                    # self.c_ph: self.c_prev,
-                }
-            )
-            print("act:\n", act)
-            print("act shape:\t", act.shape)
+            # # act forward propagation
+            # act = self.sess.run(
+            #     self.act,
+            #     feed_dict={
+            #         self.obs_in: obs,
+            #     }
+            # )
 
             # grad calculation
             dJ_dWa = self.sess.run(
@@ -315,15 +268,8 @@ class ActorRDPG(ACBase):
                 feed_dict={
                     self.obs_in: obs,
                     self.dQ_da: dQ_da,
-                    # self.h_ph: self.h_prev,
-                    # self.c_ph: self.c_prev,
                 }
             )
-            print(len(dJ_dWa))
-            print(len(dJ_dWa[0]))
-            print(dJ_dWa[0])
-            # for i in range(len(dJ_dWa)):
-            #     print(dJ_dWa.shape)
 
             # application of gradient
             _ = self.sess.run(
@@ -331,8 +277,6 @@ class ActorRDPG(ACBase):
                 feed_dict={
                     self.obs_in: obs,
                     self.dQ_da: dQ_da,
-                    # self.h_ph: self.h_prev,
-                    # self.c_ph: self.c_prev,
                 }
             )
 
@@ -350,7 +294,8 @@ class ActorRDPG(ACBase):
                         dQ_da,
                         ):
         """
-        compute gradient of objective w.r.t. observation. used for backpropagation through feature extractor.
+        compute gradient of objective w.r.t. observation. used for backpropagation through 
+        encoder.
 
         inputs:
             obs: observation, numpy array, 
@@ -361,21 +306,19 @@ class ActorRDPG(ACBase):
         returns:
             dJ/do, gradient of objective w.r.t. observation input
         """
-
-        if self.h_prev is None:
-            self.h_prev = np.random.randn(obs.shape[0], 1, self.lstm_units)
-        if self.c_prev is None:
-            self.c_prev = np.random.randn(obs.shape[0], 1, self.lstm_units)
-
-        dJ_do = self.sess.run(
-            self.dJ_do,
+        dJ_do, h, c = self.sess.run(
+            [self.dJ_do, self.actor_h, self.actor_c],
             feed_dict={
                 self.dQ_da: dQ_da,
                 self.obs_in: obs,
-                # self.h_ph: self.h_prev,
-                # self.c_ph: self.c_prev,
             }
         )
+
+        if self.test_mode:
+            print("\nhidden states after grad update:")
+            print("c:\n", c)
+            print("h:\n", h)
+
         return dJ_do[0]
 
     def propagate_actor_episode(self,
@@ -394,37 +337,8 @@ if __name__ == "__main__":
 
     session = tf.compat.v1.Session()
 
-    # testing forward pass with hidden state maintenance for a sequence of observations (ie, inference time)
-    if 0:
-        actor = ActorRDPG(
-            session,
-            training=False,
-            test_mode=True,
-        )
-        np.random.seed(0)
-        o = np.random.randn(1, 1, 32)
-        for i in range(0, 4):
-            print('----------------------------')
-            print('\nobs:\n', o[:10])
-            actor.sample_act_target(o)
-
-    # testing forward pass with hidden state maintenance for a batch of observations (ie, training time)
-    if 0:
-        lstm_horizon = 5
-        actor = ActorRDPG(
-            session,
-            training=True,
-            test_mode=True,
-        )
-        np.random.seed(0)
-        o = np.random.randn(1, lstm_horizon, 32)
-        for i in range(0, 2):
-            print('----------------------------')
-            # print('\nobs:\n', o[:10])
-            actor.sample_act(o)
-
     # test gradient update
-    if 1:
+    if 0:
         N = 3
         lstm_horizon = 4
         actor = ActorRDPG(
@@ -452,20 +366,72 @@ if __name__ == "__main__":
         print('\ndJ/doa:\n', dJ_do)
         print('\ndJ/doa shape:\n', dJ_do.shape)
 
-        # 1005197283
-    pass
+    # test hidden state maintenance without explicit handling of hidden state
+    if 0:
+        # run pre-training-episode data to set initial hidden states
+        N = 1
+        lstm_horizon = 4
+        actor = ActorRDPG(
+            session,
+            training=True,
+            test_mode=True,
+        )
+        o = np.random.randn(N, lstm_horizon, 32)
+        o1 = np.random.randn(N, 1, 32)
 
+        print("\nactor:\n")
+        actor.sample_act(o)
+        # now, with "next" sequence, should see initial state = final state of previous
+        actor.sample_act(o1)
+
+        print("\nactor target:\n")
+        actor.sample_act_target(o)
+        # now, with "next" sequence, should see initial state = final state of previous
+        actor.sample_act_target(o1)
+
+    # test hidden state maintenance when both grad AND forward prop need to be taken for
+    # same set of obs
+    if 1:
+        N = 1
+        lstm_horizon = 4
+        actor = ActorRDPG(
+            session,
+            training=True,
+            test_mode=True,
+        )
+        o = np.random.randn(N, lstm_horizon, 32)
+        o1 = np.random.randn(N, 1, 32)
+        o2 = np.random.randn(N, 1, 32)
+        dQ_da = np.random.randn(N, lstm_horizon, 3)
+
+        # forward propagate history to set initial hidden states for episode
+        print("\nactor:\n")
+        actor.sample_act(o)
+
+        # forward propagate an action in the episode
+        actor.sample_act(o1)
+
+        # calculate gradient during episode
+        dJ_da = actor.get_dJ_do_actor(o1, dQ_da)
+        print("\ngradient calculated:\n", dJ_da)
+
+        # forward propagate action in the episode. should have same init as final h as above
+        actor.sample_act(o2)
+        # actor.sample_act(o1) # passing the same obs twice in a row doesn't change h?
+
+        # NOTE: doing gradient calc does NOT change the hidden state.
+        # but is it accessing the correct hidden state? appears to.
+
+        # bottom line: grad calcs do not (seem) to alter hidden state, so can calc these
+        # before/after forward propagations and don't need to do additional h/c tracking
+    pass
 
 """
 backpropagation through time
     - requires summation of:
         dQ/da * dmu/dW
-    over an episode (so at each timestep, Q(o, mu(o)) and mu(o) have been calculated).
-    When computing this gradient, if dQ/da has shape [1, T, 32], grads are computed just fine,
-    although they are returned as tensors the shape as the matrices in the architecture, which 
-    may or may not be correct. Should they be (N, T, dim) or just (dim)? (meaning the summation
-    has already taken place)?
 
-    When computing this gradient, if dQ/da has shape [N, T, 32], nothing works
-
+gradients are always returned as arrays of the shame shape as params (regardless of batch
+size and time horizon). so assume that the summation of gradients due to each sample and
+timestep is automatically done by tf.gradients    
 """
