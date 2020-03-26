@@ -274,19 +274,6 @@ class CriticRDPG(ACBase):
 
         return dL_dWq, dQ_da, dL_do
 
-    def propagate_critic_episode(self,
-                                 obs,
-                                 obs_target,
-                                 act,
-                                 act_target,
-                                 ):
-        """
-        forward propagate data before an episode in order to update hidden states for network and target
-        """
-        self.sample_q(obs, act)
-        self.sample_q_target(obs_target, act_target)
-        return
-
 
 if __name__ == "__main__":
 

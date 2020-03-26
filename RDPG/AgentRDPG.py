@@ -113,35 +113,6 @@ class AgentRDPG():
 
         return
 
-    def update_ac_hidden_state(self,
-                               obs_t,
-                               obs_tp1,
-                               act_t,
-                               act_tp1,
-                               ):
-        """
-        propagate data prior to training episode in order to update hidden states of 
-        recurrent models
-
-        NOTE:
-        act_tp1 MUST be the output of 
-
-        inptus:
-            obs_t: observation at time t, numpy array shape (N, T, obs_dim). used for:
-                Q(o, a) in critic loss 
-                dQ/d(mu(o)) in actor gradient step
-                dmu(o)/dWa in actor gradient step
-            obs_tp1: observation at time t+1, numpy array shape (N, T, obs_dim). used for:
-                Q'(o', mu(o')) in critic loss (part of regression label)
-            act_t: action taken at time t, numpy array shape (N, T, act_dim). used for:
-                Q(o, a) in critic loss
-            act_tp1: action taken at time t+1, numpy array shape (N, T, act_dim). used for:
-        """
-        self.actor.propagate_actor_episode(obs_t, obs_tp1)
-        self.critic.propagate_critic_episode(obs_t, obs_tp1, act_t, act_tp1)
-        self.critic.propagate_critic_episode(obs_t, obs_tp1, act_t)
-        return
-
     def extract_episode(self,
                         dataset
                         ):

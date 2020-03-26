@@ -254,14 +254,6 @@ class ActorRDPG(ACBase):
                 print('----------\nweights before update:',
                       self.net_weights[0].eval(session=self.sess))
 
-            # # act forward propagation
-            # act = self.sess.run(
-            #     self.act,
-            #     feed_dict={
-            #         self.obs_in: obs,
-            #     }
-            # )
-
             # grad calculation
             dJ_dWa = self.sess.run(
                 self.dJ_dWa,
@@ -320,17 +312,6 @@ class ActorRDPG(ACBase):
             print("h:\n", h)
 
         return dJ_do[0]
-
-    def propagate_actor_episode(self,
-                                obs,
-                                obs_target,
-                                ):
-        """
-        forward propagate data before an episode in order to update hidden states for network and target
-        """
-        _ = self.sample_act(obs)
-        _ = self.sample_act_target(obs_target)
-        return
 
 
 if __name__ == "__main__":
