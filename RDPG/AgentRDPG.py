@@ -113,6 +113,21 @@ class AgentRDPG():
 
         return
 
+    def get_act(self, 
+            obs):
+        """ TODO """
+        act = self.actor.sample_act(obs, add_noise=True)
+        return act
+
+    def get_q_pred(self, 
+            obs, 
+            act,
+            ):
+        """ TODO """
+        q = self.critic.sample_q(obs, act)
+        return q
+
+
     def extract_episode(self,
                         dataset
                         ):

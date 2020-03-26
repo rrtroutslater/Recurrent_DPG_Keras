@@ -4,7 +4,6 @@ from ACBase import *
 class CriticRDPG(ACBase):
     def __init__(self,
                  session,
-                 img_dim=[16, 90, 3],
                  obs_dim=32,
                  act_dim=3,
                  learning_rate=0.005,
@@ -16,7 +15,6 @@ class CriticRDPG(ACBase):
         self.set_network_type("critic")
 
         self.sess = session
-        self.img_dim = img_dim
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.training = training
