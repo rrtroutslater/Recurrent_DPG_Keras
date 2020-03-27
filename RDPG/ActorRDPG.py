@@ -1,3 +1,4 @@
+from __future__ import print_function
 from ACBase import *
 
 
@@ -381,8 +382,8 @@ if __name__ == "__main__":
             test_mode=True,
         )
         o = np.random.randn(N, lstm_horizon, 32)
-        o1 = np.random.randn(N, 1, 32)
-        o2 = np.random.randn(N, 1, 32)
+        o1 = np.random.randn(N, 2, 32)
+        o2 = np.random.randn(N, 2, 32)
         dQ_da = np.random.randn(N, lstm_horizon, 3)
 
         # forward propagate history to set initial hidden states for episode
@@ -393,8 +394,11 @@ if __name__ == "__main__":
         actor.sample_act(o1)
 
         # calculate gradient during episode
-        dJ_da = actor.get_dJ_do_actor(o1, dQ_da)
-        print("\ngradient calculated:\n", dJ_da)
+        dJ_do = actor.get_dJ_do_actor(o1, dQ_da)
+        # print("\ngradient calculated:\n", dJ_da)
+
+        # apply gradients
+        actor.apply_gradients(o1, dQ_da, num_step=1)
 
         # forward propagate action in the episode. should have same init as final h as above
         actor.sample_act(o2)
