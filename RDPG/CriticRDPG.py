@@ -42,7 +42,7 @@ class CriticRDPG(ACBase):
         # critic, Q(o, mu(o))
         self.net, self.act_in, self.obs_in, self.q, self.critic_h_sequence, self.critic_h, self.critic_c = self.make_Q_net()
         self.net_weights = self.net.trainable_weights
-        self.net.compile(loss='mean_squared_error', optimizer='sgd')
+        self.net.compile(loss='mean_squared_error', optimizer='adam')
 
         # loss, used for grad calcs
         self.y_ph = tf.keras.backend.placeholder(shape=[None, None, 1])

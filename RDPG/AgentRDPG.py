@@ -74,7 +74,10 @@ class AgentRDPG():
 
                 # regression label
                 gamma = 0.95
+
+                # TODO: maybe more explicit calculation of gradients here
                 y = reward + gamma * q_target
+                print('y shape:\t', y.shape)
 
                 # get gradients from Q net, which are backpropagated through actor and encoder
                 # NOTE: this must be done before the train_on_batch below
@@ -82,6 +85,9 @@ class AgentRDPG():
                 act_for_grad = self.actor.sample_act(obs)
                 # for actor grad update
                 dQ_da = self.critic.get_dQ_da_critic(obs, act_for_grad)
+                print('dQ_da shape:\t', dQ_da.shape)
+                return
+
                 # for encoder update
                 dL_do = self.critic.get_dL_do_critic(y, obs, act)
                 dJ_do = self.actor.get_dJ_do_actor(obs, dQ_da)
@@ -113,22 +119,22 @@ class AgentRDPG():
 
         return
 
-    def get_act(self, 
-            obs):
+    def get_act(self,
+                obs):
         """ TODO """
         act = self.actor.sample_act(obs, add_noise=True)
         return act
 
-    def get_q_pred(self, 
-            obs, 
-            act,
-            ):
+    def get_q_pred(self,
+                   obs,
+                   act,
+                   ):
         """ TODO """
         q = self.critic.sample_q(obs, act)
         return q
 
-    def get_obs(self, 
-            img):
+    def get_obs(self,
+                img):
         """ TODO """
         obs = self.encoder.sample_obs(img)
         return obs

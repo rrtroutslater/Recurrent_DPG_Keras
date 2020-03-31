@@ -252,8 +252,12 @@ class ActorRDPG(ACBase):
 
         for i in range(0, num_step):
             if self.test_mode:
-                print('----------\nweights before update:',
-                      self.net_weights[0].eval(session=self.sess))
+                print('----------\ninput shapes:')
+                print('obs shape:\t', obs.shape)
+                print('dQ/da shape:\t', dQ_da.shape)
+                print('act shape:\t', self.act.get_shape())
+                # print('\nweights before update:',
+                #       self.net_weights[0].eval(session=self.sess))
 
             # grad calculation
             dJ_dWa = self.sess.run(
@@ -274,10 +278,9 @@ class ActorRDPG(ACBase):
             )
 
             if self.test_mode:
-                print('\nweights after update:',
-                      self.net_weights[0].eval(session=self.sess))
-                print('obs shape:\t', obs.shape)
-                print('dQ_da shape:\t', dQ_da.shape)
+                # print('\ndJ_dWa shape:\t', dJ_dWa.shape)
+                # print('\nweights after update:',
+                #       self.net_weights[0].eval(session=self.sess))
                 for i in range(0, len(dJ_dWa)):
                     print(dJ_dWa[i].shape)
         return
@@ -384,7 +387,8 @@ if __name__ == "__main__":
         o = np.random.randn(N, lstm_horizon, 32)
         o1 = np.random.randn(N, 2, 32)
         o2 = np.random.randn(N, 2, 32)
-        dQ_da = np.random.randn(N, lstm_horizon, 3)
+        # dQ_da = np.random.randn(N, 4, 3)
+        dQ_da = np.random.randn(N, 2, 3)
 
         # forward propagate history to set initial hidden states for episode
         print("\nactor:\n")
@@ -394,8 +398,7 @@ if __name__ == "__main__":
         actor.sample_act(o1)
 
         # calculate gradient during episode
-        dJ_do = actor.get_dJ_do_actor(o1, dQ_da)
-        # print("\ngradient calculated:\n", dJ_da)
+        # dJ_do = actor.get_dJ_do_actor(o1, dQ_da)
 
         # apply gradients
         actor.apply_gradients(o1, dQ_da, num_step=1)
