@@ -23,16 +23,6 @@ class ActorRDPG(ACBase):
         self.test_mode = test_mode
         self.lstm_units = 16
 
-        # placeholders for tracking hidden state over variable-length episodes
-        self.h_ph = tf.keras.backend.placeholder(
-            shape=[1, self.lstm_units])
-        self.c_ph = tf.keras.backend.placeholder(
-            shape=[1, self.lstm_units])
-        self.h_ph_t = tf.keras.backend.placeholder(
-            shape=[None, 1, self.lstm_units], dtype=tf.float32)
-        self.c_ph_t = tf.keras.backend.placeholder(
-            shape=[None, 1, self.lstm_units], dtype=tf.float32)
-
         # hidden and carry state numpy arrays
         self.h_prev = None
         self.c_prev = None
@@ -50,17 +40,17 @@ class ActorRDPG(ACBase):
         self.net_t_weights = self.net_t.trainable_weights
 
         # gradients
-        self.dQ_da, self.dJ_dWa, self.dJ_do = self.initialize_gradients()
+        self.dQ_da, self.dQ_dWa, self.dQ_do = self.initialize_gradients()
         self.grads = {
             "dQ/da": self.dQ_da,
-            "dJ/dWa = 1/NT (dQ/da * dmu/dWa)": self.dJ_dWa,
-            "dJ/do = dQ/da * dmu/do": self.dJ_do,
+            "dQ/dWa = 1/NT (dQ/da * dmu/dWa)": self.dQ_dWa,
+            "dQ/do = dQ/da * dmu/do": self.dQ_do,
         }
 
         # gradient step
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
         self.grad_step = self.optimizer.apply_gradients(
-            zip(self.dJ_dWa, self.net_weights)
+            zip(self.dQ_dWa, self.net_weights)
         )
 
         self.sess.run(tf.compat.v1.global_variables_initializer())
@@ -122,6 +112,7 @@ class ActorRDPG(ACBase):
         returns:
             action, numpy array of shape (N, num_timestep, act_dim)
         """
+        # NOTE: this can be trimmed significantly if not displaying hidden states
         if self.test_mode:
             print('\nhidden state before forward pass:\n', self.h_prev)
 
@@ -208,7 +199,7 @@ class ActorRDPG(ACBase):
         computes dy/dx * upstream_grads
 
         returns:
-            placeholder for upstream gradient of RL objective w.r.t. action: dJ/da
+            placeholder for upstream gradient of RL objective w.r.t. action: dQ/da
             gradient of objective w.r.t. network weights, a list
             gradient of objective w.r.t. observation input
         """
@@ -218,21 +209,21 @@ class ActorRDPG(ACBase):
             dtype=tf.float32,
         )
 
-        # list of gradients of objective w.r.t. actor (mu) weights: dJ/dWa = dmu/dWa * dQ/da, mu(f) = a.
+        # list of gradients of objective w.r.t. actor (mu) weights: dQ/dWa = dmu/dWa * dQ/da, mu(f) = a.
         # comes from objective maximization via policy gradient.
-        dJ_dWa = tf.gradients(
+        dQ_dWa = tf.gradients(
             self.act,
             self.net_weights,
             -dQ_da,
         )
 
-        # gradient of objective w.r.t. obs input: dJ/do = dmu/do * dJ/da, mu(f) = a
-        dJ_do = tf.gradients(
+        # gradient of objective w.r.t. obs input: dQ/do = dmu/do * dQ/da, mu(f) = a
+        dQ_do = tf.gradients(
             self.act,
             self.obs_in,
             -dQ_da,
         )
-        return dQ_da, dJ_dWa, dJ_do
+        return dQ_da, dQ_dWa, dQ_do
 
     def apply_gradients(self,
                         obs,
@@ -260,13 +251,17 @@ class ActorRDPG(ACBase):
                 #       self.net_weights[0].eval(session=self.sess))
 
             # grad calculation
-            dJ_dWa = self.sess.run(
-                self.dJ_dWa,
+            dQ_dWa = self.sess.run(
+                self.dQ_dWa,
                 feed_dict={
                     self.obs_in: obs,
                     self.dQ_da: dQ_da,
                 }
             )
+
+            # divide by batch size * time length
+            for i in range(0, len(dQ_dWa)):
+                dQ_dWa[i] /= (obs.shape[0] * obs.shape[1])
 
             # application of gradient
             _ = self.sess.run(
@@ -278,14 +273,14 @@ class ActorRDPG(ACBase):
             )
 
             if self.test_mode:
-                # print('\ndJ_dWa shape:\t', dJ_dWa.shape)
+                # print('\ndQ_dWa shape:\t', dQ_dWa.shape)
                 # print('\nweights after update:',
                 #       self.net_weights[0].eval(session=self.sess))
-                for i in range(0, len(dJ_dWa)):
-                    print(dJ_dWa[i].shape)
+                for i in range(0, len(dQ_dWa)):
+                    print(dQ_dWa[i].shape)
         return
 
-    def get_dJ_do_actor(self,
+    def get_dQ_do_actor(self,
                         obs,
                         dQ_da,
                         ):
@@ -300,22 +295,25 @@ class ActorRDPG(ACBase):
                 shape (N, num_timestep, act_dim)
 
         returns:
-            dJ/do, gradient of objective w.r.t. observation input
+            dQ/do, gradient of objective w.r.t. observation input
         """
-        dJ_do, h, c = self.sess.run(
-            [self.dJ_do, self.actor_h, self.actor_c],
+        dQ_do, h, c = self.sess.run(
+            [self.dQ_do, self.actor_h, self.actor_c],
             feed_dict={
                 self.dQ_da: dQ_da,
                 self.obs_in: obs,
             }
         )
 
+        # divide by batch size * time length
+        dQ_do[0] /= (obs.shape[0] * obs.shape[1])
+
         if self.test_mode:
             print("\nhidden states after grad update:")
             print("c:\n", c)
             print("h:\n", h)
 
-        return dJ_do[0]
+        return dQ_do[0]
 
 
 if __name__ == "__main__":
@@ -347,9 +345,9 @@ if __name__ == "__main__":
         )
         o = np.random.randn(N, lstm_horizon, 32)
         dQ_da = np.random.randn(N, lstm_horizon, 3)
-        dJ_do = actor.get_dJ_do_actor(o, dQ_da)
-        print('\ndJ/doa:\n', dJ_do)
-        print('\ndJ/doa shape:\n', dJ_do.shape)
+        dQ_do = actor.get_dQ_do_actor(o, dQ_da)
+        print('\ndQ/doa:\n', dQ_do)
+        print('\ndQ/doa shape:\n', dQ_do.shape)
 
     # test hidden state maintenance without explicit handling of hidden state
     if 0:
@@ -398,7 +396,7 @@ if __name__ == "__main__":
         actor.sample_act(o1)
 
         # calculate gradient during episode
-        # dJ_do = actor.get_dJ_do_actor(o1, dQ_da)
+        # dQ_do = actor.get_dQ_do_actor(o1, dQ_da)
 
         # apply gradients
         actor.apply_gradients(o1, dQ_da, num_step=1)

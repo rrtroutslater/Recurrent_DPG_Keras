@@ -1,29 +1,29 @@
 from __future__ import print_function
-import tensorflow as tf 
+import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 
 
 class Encoder():
     def __init__(self,
-            session,
-            img_dim=[16,90,3], 
-            obs_dim=32,
-            learning_rate=0.005,
-            beta = 1.0,
-            test_mode=False,
-        ):
+                 session,
+                 img_dim=[16, 90, 3],
+                 obs_dim=32,
+                 learning_rate=0.005,
+                 beta=1.0,
+                 test_mode=False,
+                 ):
         tf.compat.v1.disable_eager_execution()
 
-        self.sess = session        
+        self.sess = session
         self.img_dim = img_dim
         self.obs_dim = obs_dim
         self.learning_rate = learning_rate
         self.test_mode = test_mode
-        
+
         # mixing factor for gradients of Bellman error w.r.t. feature
         # dL/dWf = (dL/dfa + b * dL_dfQ) * df_dWf
-        self.beta = beta 
+        self.beta = beta
 
         # encoder, takes stack of range images, returns extracted features
         self.net, self.img_in, self.obs = self.make_encoder_net()
@@ -35,14 +35,15 @@ class Encoder():
 
         # gradient step
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
-        self.grad_step = self.optimizer.apply_gradients(zip(self.dL_dWf, self.net_weights))
+        self.grad_step = self.optimizer.apply_gradients(
+            zip(self.dL_dWf, self.net_weights))
 
         self.sess.run(tf.compat.v1.global_variables_initializer())
         return
 
     def sample_obs(self,
-            img_in,
-        ):
+                   img_in,
+                   ):
         # obs = self.net.predict(img_in)
         obs = self.sess.run(
             self.obs,
@@ -72,10 +73,9 @@ class Encoder():
         print(self.dL_dfa.get_shape())
         print(self.dL_dfQ.get_shape())
 
-
         # gradient of Bellman Error w.r.t. feature extractor weights: dL/dWf = (dL/dfa + b * dL_dfQ) * df_dWf
         self.dL_dWf = tf.gradients(
-            self.obs, 
+            self.obs,
             self.net_weights,
             -(self.dL_dfa + self.beta * self.dL_dfQ),
         )
@@ -84,16 +84,17 @@ class Encoder():
         # return dL_dfQ, dL_dfa, dL_dWf
 
     def apply_gradients_to_feature_extractor(self,
-            dL_dfQ,
-            dL_dfa,
-            img_in,
-            num_step
-        ):
+                                             dL_dfQ,
+                                             dL_dfa,
+                                             img_in,
+                                             num_step
+                                             ):
         """
         """
         for i in range(0, num_step):
             if self.test_mode:
-                print('----------\nweights before update:', self.net_weights[0].eval(session=self.sess))
+                print('----------\nweights before update:',
+                      self.net_weights[0].eval(session=self.sess))
             self.sess.run(
                 self.grad_step,
                 feed_dict={
@@ -103,7 +104,8 @@ class Encoder():
                 }
             )
             if self.test_mode:
-                print('----------\nweights after update:', self.net_weights[0].eval(session=self.sess))
+                print('----------\nweights after update:',
+                      self.net_weights[0].eval(session=self.sess))
         return
 
     def make_encoder_net(self):
@@ -115,43 +117,43 @@ class Encoder():
 
         conv_1 = keras.layers.Conv2D(
             filters=2,
-            kernel_size=[5,5],
-            strides=[2,2],
+            kernel_size=[5, 5],
+            strides=[2, 2],
             padding='same',
             activation=keras.layers.LeakyReLU(alpha=0.3),
         )(img_in)
         conv_2 = keras.layers.Conv2D(
             filters=4,
-            kernel_size=[5,5],
-            strides=[2,2],
+            kernel_size=[5, 5],
+            strides=[2, 2],
             padding='same',
             activation=keras.layers.LeakyReLU(alpha=0.3),
         )(conv_1)
         conv_3 = keras.layers.Conv2D(
             filters=8,
-            kernel_size=[5,5],
-            strides=[2,2],
+            kernel_size=[5, 5],
+            strides=[2, 2],
             padding='same',
             activation=keras.layers.LeakyReLU(alpha=0.3),
         )(conv_2)
         conv_4 = keras.layers.Conv2D(
             filters=16,
-            kernel_size=[3,3],
-            strides=[2,2],
+            kernel_size=[3, 3],
+            strides=[2, 2],
             padding='same',
             activation=keras.layers.LeakyReLU(alpha=0.3),
         )(conv_3)
         conv_5 = keras.layers.Conv2D(
             filters=32,
-            kernel_size=[3,3],
-            strides=[1,2],
+            kernel_size=[3, 3],
+            strides=[1, 2],
             padding='same',
             activation=keras.layers.LeakyReLU(alpha=0.3),
         )(conv_4)
         conv_6 = keras.layers.Conv2D(
             filters=64,
-            kernel_size=[3,3],
-            strides=[1,2],
+            kernel_size=[3, 3],
+            strides=[1, 2],
             padding='same',
             activation=keras.layers.LeakyReLU(alpha=0.3),
         )(conv_5)
@@ -173,6 +175,7 @@ class Encoder():
 
         extractor = keras.Model(img_in, feature)
         return extractor, img_in, feature
+
 
 if __name__ == "__main__":
 

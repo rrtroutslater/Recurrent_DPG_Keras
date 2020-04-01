@@ -170,7 +170,7 @@ class CriticRDPG(ACBase):
                 shape (N, num_timestep, act_dim)
 
         returns: 
-            dJ/da, gradient of objective w.r.t. action
+            dQ/da, gradient of objective w.r.t. action
         """
         dQ_da = self.sess.run(
             self.dQ_da,
@@ -200,6 +200,7 @@ class CriticRDPG(ACBase):
         returns: 
             dL/do, gradient of Bellman Loss w.r.t. observation
         """
+
         dL_do = self.sess.run(
             self.dL_do,
             feed_dict={
@@ -208,6 +209,9 @@ class CriticRDPG(ACBase):
                 self.act_in: act,
             }
         )
+
+        dL_do[0] /= (obs.shape[0] * obs.shape[1])
+
         return dL_do[0]
 
     def make_Q_net(self,):

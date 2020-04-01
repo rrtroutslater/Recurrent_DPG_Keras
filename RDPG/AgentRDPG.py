@@ -12,6 +12,8 @@ class AgentRDPG():
                  encoder,
                  lstm_horizon=10,
                  gamma=0.95,
+                 tau_actor=0.1,
+                 tau_critic=0.1,
                  ):
 
         self.sess = session
@@ -20,6 +22,8 @@ class AgentRDPG():
         self.encoder = encoder
         self.lstm_horizon = lstm_horizon
         self.gamma = gamma
+        self.tau_actor = tau_actor
+        self.tau_critic = tau_critic
 
         self.learning_rate_actor = self.actor.learning_rate
         self.learning_rate_critic = self.critic.learning_rate
@@ -77,20 +81,18 @@ class AgentRDPG():
 
                 # TODO: maybe more explicit calculation of gradients here
                 y = reward + gamma * q_target
-                print('y shape:\t', y.shape)
 
                 # get gradients from Q net, which are backpropagated through actor and encoder
                 # NOTE: this must be done before the train_on_batch below
                 # mu(o)
                 act_for_grad = self.actor.sample_act(obs)
+
                 # for actor grad update
                 dQ_da = self.critic.get_dQ_da_critic(obs, act_for_grad)
-                print('dQ_da shape:\t', dQ_da.shape)
-                return
 
                 # for encoder update
                 dL_do = self.critic.get_dL_do_critic(y, obs, act)
-                dJ_do = self.actor.get_dJ_do_actor(obs, dQ_da)
+                dQ_do = self.actor.get_dQ_do_actor(obs, dQ_da)
 
                 # take a gradient step on the Q network weights
                 l = self.critic.net.train_on_batch([act, obs], y)
@@ -102,14 +104,14 @@ class AgentRDPG():
                 # grad step on encoder
                 self.encoder.apply_gradients_to_feature_extractor(
                     dL_do[0],
-                    dJ_do[0],
+                    dQ_do[0],
                     episode['img_0'],
                     num_step=1,
                 )
 
                 # update target networks
-                self.actor.update_target_net()
-                self.critic.update_target_net()
+                self.actor.update_target_net(self.tau_actor)
+                self.critic.update_target_net(self.tau_critic)
 
         plt.plot(loss)
         plt.title('Q-function Loss')
@@ -187,5 +189,4 @@ if __name__ == "__main__":
     agent.train_rdpg(dataset, num_episode=200, num_update=1)
 
     # print(agent.encoder.sample_obs(np.random.randn(1, 16, 90, 3)).shape)
-
     pass
