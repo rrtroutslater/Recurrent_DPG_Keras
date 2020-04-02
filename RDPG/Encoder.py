@@ -70,14 +70,13 @@ class Encoder():
             dtype=tf.float32,
         )
 
-        print(self.dL_dfa.get_shape())
-        print(self.dL_dfQ.get_shape())
-
         # gradient of Bellman Error w.r.t. feature extractor weights: dL/dWf = (dL/dfa + b * dL_dfQ) * df_dWf
         self.dL_dWf = tf.gradients(
             self.obs,
             self.net_weights,
-            -(self.dL_dfa + self.beta * self.dL_dfQ),
+            # minus for actor (maximizing objective) plus for critic (minimizing loss)
+            self.dL_dfa + self.beta * self.dL_dfQ,
+            # self.beta * self.dL_dfQ,
         )
 
         return
@@ -91,6 +90,8 @@ class Encoder():
                                              ):
         """
         """
+        # TODO: divide grads by the time horizon * N
+
         for i in range(0, num_step):
             if self.test_mode:
                 print('----------\nweights before update:',

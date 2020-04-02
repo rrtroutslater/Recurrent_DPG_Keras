@@ -1,5 +1,5 @@
+from __future__ import print_function
 from ACBase import *
-
 
 class CriticRDPG(ACBase):
     def __init__(self,
@@ -62,6 +62,7 @@ class CriticRDPG(ACBase):
         }
 
         self.sess.run(tf.compat.v1.global_variables_initializer())
+
         return
 
     def sample_q(self,
@@ -227,6 +228,8 @@ class CriticRDPG(ACBase):
 
         act_obs_in = tf.concat([act_in, obs_in], axis=2)
 
+        print('\nACT OBS IN SHAPE:\t', act_obs_in.get_shape())
+
         lstm_sequence, h, c = keras.layers.LSTM(
             units=self.lstm_units,
             activation="tanh",
@@ -238,7 +241,8 @@ class CriticRDPG(ACBase):
 
         q = keras.layers.Dense(
             units=1,
-            activation='sigmoid'
+            # activation='relu'
+            activation='relu'
         )(lstm_sequence)
 
         model = keras.Model(inputs=[act_in, obs_in], outputs=q)
@@ -302,7 +306,7 @@ if __name__ == "__main__":
     act = np.random.randn(1, 4, 3)
 
     # test forward pass on batch with hidden state propagation
-    if 1:
+    if 0:
         # target
         print("\ncritic target:\n")
         q = critic.sample_q_target(obs, act)

@@ -412,12 +412,3 @@ if __name__ == "__main__":
         # before/after forward propagations and don't need to do additional h/c tracking
     pass
 
-"""
-backpropagation through time
-    - requires summation of:
-        dQ/da * dmu/dW
-
-gradients are always returned as arrays of the shame shape as params (regardless of batch
-size and time horizon). so assume that the summation of gradients due to each sample and
-timestep is automatically done by tf.gradients    
-"""
