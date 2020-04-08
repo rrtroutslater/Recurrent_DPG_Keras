@@ -71,6 +71,13 @@ class ActorRDPG(ACBase):
             shape=[None, self.obs_dim],
         )
 
+        # turn obs into something of image size
+        
+        # insert encoder here (pre-defined elsewhere as set of tf ops)
+        # input = obs_in, output = feature_dim features
+
+        # 
+
         lstm_cell = tf.keras.layers.LSTMCell(
             self.lstm_units,
             activation="tanh",
