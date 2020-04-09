@@ -1,12 +1,15 @@
 from __future__ import print_function
 from ACBase import *
+from EncoderNet import *
+import matplotlib.pyplot as plt
 
 class CriticRDPG(ACBase):
     def __init__(self,
                  session,
-                 obs_dim=32,
+                #  obs_dim=32,
+                 obs_dim=[16, 90, 3],
                  act_dim=3,
-                 learning_rate=0.005,
+                 learning_rate=0.001,
                  training=True,
                  test_mode=False,
                  ):
@@ -24,20 +27,14 @@ class CriticRDPG(ACBase):
         self.lstm_units = 16
 
         # placeholders for tracking hidden state over variable-length episodes
-        self.h_ph = tf.keras.backend.placeholder(
-            shape=[1, self.lstm_units])
-        self.c_ph = tf.keras.backend.placeholder(
-            shape=[1, self.lstm_units])
-        self.h_ph_t = tf.keras.backend.placeholder(
-            shape=[None, 1, self.lstm_units], dtype=tf.float32)
-        self.c_ph_t = tf.keras.backend.placeholder(
-            shape=[None, 1, self.lstm_units], dtype=tf.float32)
+        self.h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h")
+        self.c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c")
 
         # hidden and carry state numpy arrays
-        self.h_prev = None
-        self.c_prev = None
-        self.h_prev_t = None
-        self.c_prev_t = None
+        self.h_prev = np.zeros(shape=(1, self.lstm_units), dtype=np.float32)
+        self.c_prev = np.zeros(shape=(1, self.lstm_units), dtype=np.float32)
+        self.h_prev_t = np.zeros(shape=(1, self.lstm_units), dtype=np.float32)
+        self.c_prev_t = np.zeros(shape=(1, self.lstm_units), dtype=np.float32)
 
         # critic, Q(o, mu(o))
         self.net, self.act_in, self.obs_in, self.q, self.critic_h_sequence, self.critic_h, self.critic_c = self.make_Q_net()
@@ -54,16 +51,61 @@ class CriticRDPG(ACBase):
         self.net_t_weights = self.net_t.trainable_weights
 
         # gradients
-        self.dL_dWq, self.dQ_da, self.dL_do = self.initialize_gradients()
+        self.dL_dWq, self.dQ_da = self.initialize_gradients()
         self.grads = {
             "dL/dWq = dL/dq * dQ/dWq": self.dL_dWq,
             "dQ/da": self.dQ_da,
-            "dL/do = dL/dq * dQ/do": self.dL_do,
         }
+
+        # optimizer, grad step
+        self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
+        self.grad_step = self.optimizer.apply_gradients(
+            zip(self.dL_dWq, self.net_weights)
+        )
 
         self.sess.run(tf.compat.v1.global_variables_initializer())
 
         return
+
+    def make_Q_net(self,):
+        """
+        define critic network architecture, used for Q and Q target.
+        encoder -> LSTM
+
+        returns:
+            keras model
+            input action
+            input observation
+            q output
+            hidden state history h[]
+            hidden state h
+            carry state c
+        """
+        act_in = tf.keras.layers.Input(shape=self.act_dim, name="act_in")
+        obs_in = tf.keras.layers.Input(shape=self.obs_dim, name="obs_in")
+
+        feature = make_encoder_net(obs_in, test_mode=self.test_mode)
+        feature = tf.expand_dims(feature, axis=0)
+
+        act_for_lstm = tf.expand_dims(act_in, axis=0)
+        act_obs_in = tf.concat([act_for_lstm, feature], axis=2)
+
+        lstm_sequence, h, c = keras.layers.LSTM(
+            units=self.lstm_units,
+            activation="tanh",
+            recurrent_activation="tanh",
+            return_sequences=True,
+            return_state=True,
+            stateful=False,
+        )(act_obs_in, initial_state=[self.h_ph, self.c_ph])
+
+        q = keras.layers.Dense(
+            units=1,
+            activation='relu'
+        )(lstm_sequence)
+
+        model = keras.Model(inputs=[act_in, obs_in], outputs=q)
+        return model, act_in, obs_in, q, lstm_sequence, h, c
 
     def sample_q(self,
                  obs,
@@ -80,13 +122,16 @@ class CriticRDPG(ACBase):
             q, numpy array of shape (N, num_timestep, 1)
         """
         if self.test_mode:
-            print('\nhidden state before forward pass:\n', self.h_prev)
+            print('\n-----------------------------\nbefore forward pass')
+            self.display_hidden_state()
 
         q, h_prev, c_prev = self.sess.run(
             [self.q, self.critic_h, self.critic_c],
             feed_dict={
                 self.obs_in: obs,
                 self.act_in: act,
+                self.h_ph: self.h_prev,
+                self.c_ph: self.c_prev,
             }
         )
 
@@ -97,6 +142,8 @@ class CriticRDPG(ACBase):
                 feed_dict={
                     self.obs_in: obs,
                     self.act_in: act,
+                    self.h_ph: self.h_prev,
+                    self.c_ph: self.c_prev,
                 }
             )
 
@@ -105,9 +152,9 @@ class CriticRDPG(ACBase):
         self.c_prev = c_prev
 
         if self.test_mode:
+            print('\n-----------------------------\nafter forward pass')
             print('\nq:\n', q)
-            print('\ncarry state:\n', self.c_prev)
-            print('\nhidden state after forward pass:\n', self.h_prev)
+            self.display_hidden_state
             print('\nhidden state history:\n', hidden_state_history)
         return q
 
@@ -126,13 +173,16 @@ class CriticRDPG(ACBase):
             q, numpy array of shape (N, num_timestep, 1)
         """
         if self.test_mode:
-            print('\nhidden state before forward pass:\n', self.h_prev_t)
+            print('\n-----------------------------\nbefore forward pass')
+            self.display_target_hidden_state()
 
         q_t, h_prev_t, c_prev_t = self.sess.run(
             [self.q_t, self.critic_h_t, self.critic_c_t],
             feed_dict={
                 self.obs_in_t: obs,
                 self.act_in_t: act,
+                self.h_ph: self.h_prev_t,
+                self.c_ph: self.c_prev_t,
             }
         )
 
@@ -143,6 +193,8 @@ class CriticRDPG(ACBase):
                 feed_dict={
                     self.obs_in_t: obs,
                     self.act_in_t: act,
+                    self.h_ph: self.h_prev_t,
+                    self.c_ph: self.c_prev_t,
                 }
             )
 
@@ -151,10 +203,11 @@ class CriticRDPG(ACBase):
         self.c_prev_t = c_prev_t
 
         if self.test_mode:
+            print('\n-----------------------------\nafter forward pass')
             print('\nq:\n', q_t)
-            print('\ncarry state:\n', self.c_prev_t)
-            print('\nhidden state after forward pass:\n', self.h_prev_t)
-            print('\nhidden state history:\n', hidden_state_history)
+            self.display_target_hidden_state()
+            print('\nhidden state history:\n', hidden_state_history)        
+            
         return q_t
 
     def get_dQ_da_critic(self,
@@ -178,75 +231,11 @@ class CriticRDPG(ACBase):
             feed_dict={
                 self.obs_in: obs,
                 self.act_in: act,
+                self.h_ph: self.h_prev,
+                self.c_ph: self.c_prev,
             }
         )
         return dQ_da[0]
-
-    def get_dL_do_critic(self,
-                         labels,
-                         obs,
-                         act,
-                         ):
-        """
-        compute gradient of loss function w.r.t. observation, to be backpropagated through encoder
-
-        inputs:
-            labels: training labels for DPG Bellman error, numpy array,
-                shape (N, num_timestep, 1)
-            obs: extracted features, numpy array,
-                shape (N, num_timestep, obs_dim)
-            act: actions, numpy array,
-                shape (N, num_timestep, act_dim)
-
-        returns: 
-            dL/do, gradient of Bellman Loss w.r.t. observation
-        """
-
-        dL_do = self.sess.run(
-            self.dL_do,
-            feed_dict={
-                self.y_ph: labels,
-                self.obs_in: obs,
-                self.act_in: act,
-            }
-        )
-
-        dL_do[0] /= (obs.shape[0] * obs.shape[1])
-
-        return dL_do[0]
-
-    def make_Q_net(self,):
-        """
-        """
-        act_in = tf.keras.layers.Input(
-            shape=[None, self.act_dim]
-        )
-
-        obs_in = tf.keras.layers.Input(
-            shape=[None, self.obs_dim]
-        )
-
-        act_obs_in = tf.concat([act_in, obs_in], axis=2)
-
-        print('\nACT OBS IN SHAPE:\t', act_obs_in.get_shape())
-
-        lstm_sequence, h, c = keras.layers.LSTM(
-            units=self.lstm_units,
-            activation="tanh",
-            recurrent_activation="sigmoid",
-            return_sequences=True,
-            return_state=True,
-            stateful=False,
-        )(act_obs_in)
-
-        q = keras.layers.Dense(
-            units=1,
-            # activation='relu'
-            activation='relu'
-        )(lstm_sequence)
-
-        model = keras.Model(inputs=[act_in, obs_in], outputs=q)
-        return model, act_in, obs_in, q, lstm_sequence, h, c
 
     def initialize_gradients(self,):
         """
@@ -272,19 +261,32 @@ class CriticRDPG(ACBase):
             self.act_in,
         )
 
-        # gradient of Bellman Error w.r.t. Q function obs input: dL/do = dL/dq * dq/do
-        dL_do = tf.gradients(
-            self.loss,
-            self.obs_in
-        )
+        return dL_dWq, dQ_da
 
-        return dL_dWq, dQ_da, dL_do
+    def train_critic(self, act, obs, y, num_step=100):
+        """
+        take a gradient step on critic function
+        """
+        y = np.expand_dims(y, axis=0)
+        losses = []
 
+        for i in range(num_step):
+            loss, _ = self.sess.run(
+                [self.loss, self.grad_step],
+                feed_dict={
+                    self.y_ph: y,
+                    self.act_in: act,
+                    self.obs_in: obs,
+                    self.h_ph: self.h_prev,
+                    self.c_ph: self.c_prev,
+                }
+            )
+            losses.append(loss[0])
+
+        return losses
 
 if __name__ == "__main__":
-
     session = tf.compat.v1.Session()
-
     critic = CriticRDPG(
         session,
         training=True,
@@ -292,18 +294,18 @@ if __name__ == "__main__":
     )
 
     np.random.seed(0)
-
     # test forward pass on series of single observations
     if 0:
         for i in range(0, 4):
             print('\n--------------')
-            obs = np.random.randn(1, 1, 32)
-            act = np.random.randn(1, 1, 3)
+            obs = np.random.randn(1, 16, 90, 3)
+            # act = np.random.randn(1, 1, 3)
+            act = np.random.randn(1, 3)
             q = critic.sample_q(obs, act)
 
     # make a stack of unique observations:
-    obs = np.random.randn(1, 4, 32)
-    act = np.random.randn(1, 4, 3)
+    obs = np.random.randn(4, 16, 90, 3)
+    act = np.random.randn(4, 3)
 
     # test forward pass on batch with hidden state propagation
     if 0:
@@ -311,29 +313,24 @@ if __name__ == "__main__":
         print("\ncritic target:\n")
         q = critic.sample_q_target(obs, act)
         q_1 = critic.sample_q_target(np.random.randn(
-            1, 1, 32), np.random.randn(1, 1, 3))
+            1, 16, 90, 3), np.random.randn(1, 3))
 
         print("\ncritic:\n")
         # actor
         q = critic.sample_q(obs, act)
         q_1 = critic.sample_q(np.random.randn(
-            1, 1, 32), np.random.randn(1, 1, 3))
+            1, 16, 90, 3), np.random.randn(1, 3))
 
     # test gradients
-    if 1:
+    if 0:
         # test dQ_da
-        act = np.random.randn(1, 4, 3)
+        act = np.random.randn(4, 3)
         dQ_da = critic.get_dQ_da_critic(obs, act)
-        print('\ndL/da:\n', dQ_da)
-
-        # test dL_do
-        labels = np.random.randn(1, 4, 1)
-        dL_do = critic.get_dL_do_critic(labels, obs, act)
-        print('\ndL/do:\n', dL_do)
+        print('\ndQ/da:\n', dQ_da)
 
     if 0:
         # test q
-        act = np.random.randn(1, 4, 3)
+        act = np.random.randn(4, 3)
         q = critic.sample_q(obs, act)
         print('\nq:\n', q)
         q_t = critic.sample_q_target(obs, act)
@@ -341,10 +338,17 @@ if __name__ == "__main__":
 
     # test training
     if 0:
-        act = np.random.randn(1, 4, 3)
-        obs = np.random.randn(1, 4, 32)
-        y = np.random.randn(1, 4, 1)
-        loss = critic.net.train_on_batch([act, obs], y)
-        print(loss)
+        # forward-propagate "prior to episode" data
+        q = critic.sample_q(obs, act)
+
+        act = np.random.randn(4, 3)
+        obs = np.random.randn(4, 16, 90, 3)
+        y = np.random.randn(4, 1)
+        losses = []
+        loss = critic.train_critic(act, obs, y)
+        
+        plt.plot(loss)
+        plt.show()
+        # print(loss)
 
     pass

@@ -1,6 +1,7 @@
 from ActorRDPG import *
 from CriticRDPG import *
 from Encoder import *
+from EncoderNet import *
 import matplotlib.pyplot as plt
 import os
 import pickle

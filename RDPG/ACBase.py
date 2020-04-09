@@ -119,3 +119,11 @@ class ACBase():
 
         self.net_t.set_weights(target_weights)
         return
+
+    def display_hidden_state(self,):
+        print('current hidden state:\t', self.h_prev)
+        print('current carry state:\t', self.c_prev)
+
+    def display_target_hidden_state(self,):
+        print('current TARGET hidden state:\t', self.h_prev_t)
+        print('current TARGET carry state:\t', self.c_prev_t)
