@@ -110,6 +110,7 @@ class CriticRDPG(ACBase):
     def sample_q(self,
                  obs,
                  act,
+                 reset_hidden_after_sample=False
                  ):
         """
         sample Q(o, a) value
@@ -117,10 +118,17 @@ class CriticRDPG(ACBase):
         inputs: 
             obs: observations, numpy array of shape (N, num_timestep, obs_dim)
             act: actions, numpy array of shape (N, num_timestep, act_dim)
+            reset_hidden_after_sample: indicates whether to reset hidden state to initial
+            value after forward propagation, used to ensure grad calcs are based on accurate
+            initial hidden state during training
 
         returns:
             q, numpy array of shape (N, num_timestep, 1)
         """
+        if reset_hidden_after_sample:
+            h_init = self.h_prev
+            c_init = self.c_prev
+
         if self.test_mode:
             print('\n-----------------------------\nbefore forward pass')
             self.display_hidden_state()
@@ -151,16 +159,22 @@ class CriticRDPG(ACBase):
         self.h_prev = h_prev
         self.c_prev = c_prev
 
+        if reset_hidden_after_sample:
+            self.h_prev = h_init
+            self.c_prev = c_init
+
         if self.test_mode:
             print('\n-----------------------------\nafter forward pass')
             print('\nq:\n', q)
             self.display_hidden_state
             print('\nhidden state history:\n', hidden_state_history)
+
         return q
 
     def sample_q_target(self,
                         obs,
                         act,
+                        reset_hidden_after_sample=False
                         ):
         """
         sample Q'(o', a') value from TARGET network
@@ -168,10 +182,17 @@ class CriticRDPG(ACBase):
         inputs: 
             obs: observations, numpy array of shape (N, num_timestep, obs_dim)
             act: actions, numpy array of shape (N, num_timestep, act_dim)
+            reset_hidden_after_sample: indicates whether to reset hidden state to initial
+            value after forward propagation, used to ensure grad calcs are based on accurate
+            initial hidden state during training
 
         returns:
             q, numpy array of shape (N, num_timestep, 1)
         """
+        if reset_hidden_after_sample:
+            h_init = self.h_prev_t
+            c_init = self.c_prev_t
+
         if self.test_mode:
             print('\n-----------------------------\nbefore forward pass')
             self.display_target_hidden_state()
@@ -202,12 +223,17 @@ class CriticRDPG(ACBase):
         self.h_prev_t = h_prev_t
         self.c_prev_t = c_prev_t
 
+        if reset_hidden_after_sample:
+            self.h_prev_t = h_init
+            self.c_prev_t = c_init
+
         if self.test_mode:
             print('\n-----------------------------\nafter forward pass')
             print('\nq:\n', q_t)
             self.display_target_hidden_state()
             print('\nhidden state history:\n', hidden_state_history)        
-            
+   
+
         return q_t
 
     def get_dQ_da_critic(self,

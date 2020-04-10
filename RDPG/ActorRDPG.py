@@ -103,7 +103,8 @@ class ActorRDPG(ACBase):
 
     def sample_act(self,
                    obs,
-                   add_noise=False
+                   add_noise=False,
+                   reset_hidden_after_sample=False
                    ):
         """
         sampe action, a = mu(obs)
@@ -112,11 +113,17 @@ class ActorRDPG(ACBase):
             obs: observation, numpy array of shape (N, num_timestep, obs_dim)
             add_noise: flag indicating whether to add noise to action, used for exploration
                 of state/action space during training
+            reset_hidden_after_sample: indicates whether to reset hidden state to initial
+            value after forward propagation, used to ensure grad calcs are based on accurate
+            initial hidden state during training
 
         returns:
             action, numpy array of shape (N, num_timestep, act_dim)
         """
-        # NOTE: this can be trimmed significantly if not displaying hidden states
+        if reset_hidden_after_sample:
+            h_init = self.h_prev
+            c_init = self.c_prev
+
         if self.test_mode:
             print('\n------------------\nbefore forward pass')
             self.display_hidden_state()
@@ -146,6 +153,10 @@ class ActorRDPG(ACBase):
         self.h_prev = h_prev
         self.c_prev = c_prev
 
+        if reset_hidden_after_sample:
+            self.h_prev = h_init
+            self.c_prev = c_init
+
         if self.test_mode:
             print('\n------------------\nafter forward pass')
             print('act:\n', act)
@@ -155,17 +166,25 @@ class ActorRDPG(ACBase):
         return act
 
     def sample_act_target(self,
-                          obs
+                          obs,
+                          reset_hidden_after_sample=False
                           ):
         """
         sample action from target network, a' = mu'(obs')
 
         input:input shapes
-            obs: observation, numpy array of shape (N, num_timestep, obs_dim)
+            obs: observation, numpy array of shape (N, num_timestep, obs_dim)\
+            reset_hidden_after_sample: indicates whether to reset hidden state to initial
+            value after forward propagation, used to ensure grad calcs are based on accurate
+            initial hidden state during training
 
         returns:
             action, numpy array of shape (N, num_timestep, act_dim)
         """
+        if reset_hidden_after_sample:
+            h_init = self.h_prev_t
+            c_init = self.c_prev_t
+
         if self.test_mode:
             print('\n-----------------------------\nbefore forward pass')
             self.display_target_hidden_state()
@@ -195,11 +214,16 @@ class ActorRDPG(ACBase):
         self.h_prev_t = h_prev_t
         self.c_prev_t = c_prev_t
 
+        if reset_hidden_after_sample:
+            self.h_prev_t = h_init
+            self.c_prev_t = c_init
+
         if self.test_mode:
             print('\n-----------------------------\nafter forward pass')
             print('\nact TARGET:\n', act_t)
             self.display_target_hidden_state()
             print('\nhidden state history:\n', hidden_state_history)
+
         return act_t
 
     def initialize_gradients(self):
@@ -308,7 +332,7 @@ if __name__ == "__main__":
 
 
     # test forward pass
-    if 0:
+    if 1:
         lstm_horizon = 4
         np.random.seed(0)
         o = np.random.randn(lstm_horizon, 16, 90, 3)
@@ -318,7 +342,8 @@ if __name__ == "__main__":
  
         print('===================================================')
         a1 = actor.sample_act(o1)
-        actor.display_hidden_state()
+        print('===================================================')
+        a1 = actor.sample_act(o1, reset_hidden_after_sample=True)
 
     # test target forward pass
     if 0: 
@@ -339,7 +364,7 @@ if __name__ == "__main__":
         actor.apply_gradients(o, dQ_da, num_step=1)
 
     # test gradient update AFTER forward propagation ~ this is what happens during training
-    if 1: 
+    if 0: 
         lstm_horizon = 4
         np.random.seed(0)
         o = np.random.randn(lstm_horizon, 16, 90, 3)
