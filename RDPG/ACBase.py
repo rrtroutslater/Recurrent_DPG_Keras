@@ -83,10 +83,14 @@ class ACBase():
             net_t_fname,
         ):
         """
-        load network weights from file        self.tau = tau
+        load network weights from file
 
+        inputs:
+            net_t: filename of saved model
             net_t_fname: filename of saved target model
         """
+        self.net.load_weights(net_fname)
+        self.net_t.load_weights(net_t_fname)
         return
 
     def save_model(self, 
@@ -101,11 +105,10 @@ class ACBase():
         if net_t_fname == "":
             net_t_fname = "./trained_models/" + self.net_type + "_target_" + str(self.lstm_horizon) + "_" + str(datetime.datetime.now())
 
-        print(net_fname)
-        print(net_t_fname)
-
-        tf.keras.models.save_model(self.net, net_fname)
-        tf.keras.models.save_model(self.net_t, net_t_fname)
+        # tf.keras.models.save_model(self.net, net_fname)
+        # tf.keras.models.save_model(self.net_t, net_t_fname)
+        self.net.save_weights(net_fname, save_format='tf')
+        self.net_t.save_weights(net_t_fname, save_format='tf')
         return net_fname, net_t_fname
 
     def update_target_net(self,

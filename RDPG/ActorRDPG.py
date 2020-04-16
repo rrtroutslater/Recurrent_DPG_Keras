@@ -83,8 +83,10 @@ class ActorRDPG(ACBase):
             carry state c keras variable for manual handling
         """
         # variables for tracking hidden state over variable-length episodes
-        h_ph = tf.keras.backend.variable(self.h_prev, name="h"+net_type)
-        c_ph = tf.keras.backend.variable(self.c_prev, name="c"+net_type)
+        # h_ph = tf.keras.backend.variable(self.h_prev, name="h"+net_type)
+        # c_ph = tf.keras.backend.variable(self.c_prev, name="c"+net_type)
+        h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h"+net_type)
+        c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c"+net_type)
 
         obs_in = keras.layers.Input(
             shape=[None, self.obs_dim[0], self.obs_dim[1], self.obs_dim[2]],
@@ -111,7 +113,7 @@ class ActorRDPG(ACBase):
             activation="tanh",
         )(lstm_sequence)
 
-        model = keras.Model(inputs=obs_in, outputs=[act, h, c])
+        model = keras.Model(inputs=[obs_in], outputs=[act, h, c])
         return model, obs_in, act, lstm_sequence, h, c, h_ph, c_ph
 
     def sample_act(self,
@@ -356,9 +358,10 @@ if __name__ == "__main__":
     actor.export_model_figure()
 
     # test model saving and loading
-    if 0:
-        fn, target_fn = actor.save_model()
-        actor.load_model(fn, target_fn)
+    if 1:
+        print(type(actor.net))
+        actor.net.save_weights('egg_mpode', save_format='tf')
+        actor.net.load_weights('egg_mpode')
 
     # test forward pass with model.predict
     if 0:
@@ -368,7 +371,7 @@ if __name__ == "__main__":
         actor.model_predict(o)
 
     # test forward pass
-    if 0:
+    if 1:
         lstm_horizon = 4
         # np.random.seed(0)
         o = np.random.randn(1, lstm_horizon, 16, 90, 3)

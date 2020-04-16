@@ -221,83 +221,89 @@ if __name__ == "__main__":
     plt.xlabel('iter')
     plt.ylabel('')
     plt.show()
-
-    # 12
-    critic = CriticRDPG(session, lstm_horizon=12)  # test_mode=True)
-    actor = ActorRDPG(session, lstm_horizon=12)  # test_mode=True)
-    agent = AgentRDPG(session, actor, critic)
-    loss_12 = []
-    for i in range(3000):
-        idx = np.random.randint(len(fn_list))
-        with open(data_dir + fn_list[idx], 'rb') as f:
-            dataset = pickle.load(f)
-        l = agent.train_rdpg(dataset, 
-                            num_episode_per_dataset=1, 
-                            lstm_horizon=12,
-                            num_update=1)
-        for i in range(len(l)):
-            loss_12.append(l[i])
-    loss_12 = [loss_12[i] / 12 for i in range(0, len(loss_12))]
-    loss_12 = np.convolve(np.array(loss_12), np.ones(40), 'valid') / 40
-
-    plt.plot(loss_12, label="12")
-    plt.legend(loc="upper right")
-    plt.title('Q-function Loss')
-    plt.xlabel('iter')
-    plt.ylabel('')
-    plt.show()
-
-    # 16
-    critic = CriticRDPG(session, lstm_horizon=16)  # test_mode=True)
-    actor = ActorRDPG(session, lstm_horizon=16)  # test_mode=True)
-    agent = AgentRDPG(session, actor, critic)
-    loss_16 = []
-    for i in range(3000):
-        idx = np.random.randint(len(fn_list))
-        with open(data_dir + fn_list[idx], 'rb') as f:
-            dataset = pickle.load(f)
-        l = agent.train_rdpg(dataset, 
-                            num_episode_per_dataset=1, 
-                            lstm_horizon=16,
-                            num_update=1)
-        for i in range(len(l)):
-            loss_16.append(l[i])
-    loss_16 = [loss_16[i] / 16 for i in range(0, len(loss_16))]
-    loss_16 = np.convolve(np.array(loss_16), np.ones(40), 'valid') / 40
-
-    plt.plot(loss_16, label="16")
-    plt.legend(loc="upper right")
-    plt.title('Q-function Loss')
-    plt.xlabel('iter')
-    plt.ylabel('')
-    plt.show()
-
-    # 20
-    critic = CriticRDPG(session, lstm_horizon=20)  # test_mode=True)
-    actor = ActorRDPG(session, lstm_horizon=20)  # test_mode=True)
-    agent = AgentRDPG(session, actor, critic)
-    loss_20 = []
-    for i in range(3000):
-        idx = np.random.randint(len(fn_list))
-        # idx = 0
-        with open(data_dir + fn_list[idx], 'rb') as f:
-            dataset = pickle.load(f)
-        l = agent.train_rdpg(dataset, 
-                            num_episode_per_dataset=1, 
-                            lstm_horizon=20,
-                            num_update=1)
-        for i in range(len(l)):
-            loss_20.append(l[i])
-    loss_20 = [loss_20[i] / 20 for i in range(0, len(loss_20))]
-    loss_20 = np.convolve(np.array(loss_20), np.ones(40), 'valid') / 40
-
-    plt.plot(loss_20, label="20")
-    plt.legend(loc="upper right")
-    plt.title('Q-function Loss')
-    plt.xlabel('iter')
-    plt.ylabel('')
-    plt.show()
     critic.save_model()
     actor.save_model()
+
+    # # 12
+    # critic = CriticRDPG(session, lstm_horizon=12)  # test_mode=True)
+    # actor = ActorRDPG(session, lstm_horizon=12)  # test_mode=True)
+    # agent = AgentRDPG(session, actor, critic)
+    # loss_12 = []
+    # for i in range(3000):
+    #     idx = np.random.randint(len(fn_list))
+    #     with open(data_dir + fn_list[idx], 'rb') as f:
+    #         dataset = pickle.load(f)
+    #     l = agent.train_rdpg(dataset, 
+    #                         num_episode_per_dataset=1, 
+    #                         lstm_horizon=12,
+    #                         num_update=1)
+    #     for i in range(len(l)):
+    #         loss_12.append(l[i])
+    # loss_12 = [loss_12[i] / 12 for i in range(0, len(loss_12))]
+    # loss_12 = np.convolve(np.array(loss_12), np.ones(40), 'valid') / 40
+
+    # plt.plot(loss_12, label="12")
+    # plt.legend(loc="upper right")
+    # plt.title('Q-function Loss')
+    # plt.xlabel('iter')
+    # plt.ylabel('')
+    # plt.show()
+    # critic.save_model()
+    # actor.save_model()
+
+    # # 16
+    # critic = CriticRDPG(session, lstm_horizon=16)  # test_mode=True)
+    # actor = ActorRDPG(session, lstm_horizon=16)  # test_mode=True)
+    # agent = AgentRDPG(session, actor, critic)
+    # loss_16 = []
+    # for i in range(3000):
+    #     idx = np.random.randint(len(fn_list))
+    #     with open(data_dir + fn_list[idx], 'rb') as f:
+    #         dataset = pickle.load(f)
+    #     l = agent.train_rdpg(dataset, 
+    #                         num_episode_per_dataset=1, 
+    #                         lstm_horizon=16,
+    #                         num_update=1)
+    #     for i in range(len(l)):
+    #         loss_16.append(l[i])
+    # loss_16 = [loss_16[i] / 16 for i in range(0, len(loss_16))]
+    # loss_16 = np.convolve(np.array(loss_16), np.ones(40), 'valid') / 40
+
+    # plt.plot(loss_16, label="16")
+    # plt.legend(loc="upper right")
+    # plt.title('Q-function Loss')
+    # plt.xlabel('iter')
+    # plt.ylabel('')
+    # plt.show()
+    # critic.save_model()
+    # actor.save_model()
+
+    # # 20
+    # critic = CriticRDPG(session, lstm_horizon=20)  # test_mode=True)
+    # actor = ActorRDPG(session, lstm_horizon=20)  # test_mode=True)
+    # agent = AgentRDPG(session, actor, critic)
+    # loss_20 = []
+    # for i in range(3000):
+    #     idx = np.random.randint(len(fn_list))
+    #     # idx = 0
+    #     with open(data_dir + fn_list[idx], 'rb') as f:
+    #         dataset = pickle.load(f)
+    #     l = agent.train_rdpg(dataset, 
+    #                         num_episode_per_dataset=1, 
+    #                         lstm_horizon=20,
+    #                         num_update=1)
+    #     for i in range(len(l)):
+    #         loss_20.append(l[i])
+    # loss_20 = [loss_20[i] / 20 for i in range(0, len(loss_20))]
+    # loss_20 = np.convolve(np.array(loss_20), np.ones(40), 'valid') / 40
+
+    # plt.plot(loss_20, label="20")
+    # plt.legend(loc="upper right")
+    # plt.title('Q-function Loss')
+    # plt.xlabel('iter')
+    # plt.ylabel('')
+    # plt.show()
+    # critic.save_model()
+    # actor.save_model()
 
     pass

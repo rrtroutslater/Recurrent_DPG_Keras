@@ -89,8 +89,10 @@ class CriticRDPG(ACBase):
             carry state c keras variable for manual handling
         """
         # variables for tracking hidden state over variable-length episodes
-        h_ph = tf.keras.backend.variable(self.h_prev, name="h"+net_type)
-        c_ph = tf.keras.backend.variable(self.c_prev, name="c"+net_type)
+        # h_ph = tf.keras.backend.variable(self.h_prev, name="h"+net_type)
+        # c_ph = tf.keras.backend.variable(self.c_prev, name="c"+net_type)
+        h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h"+net_type)
+        c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c"+net_type)
 
         act_in = tf.keras.layers.Input(shape=[None, self.act_dim], name="act_in")
         obs_in = tf.keras.layers.Input(
