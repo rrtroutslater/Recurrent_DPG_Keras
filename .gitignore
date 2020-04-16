@@ -6,3 +6,5 @@
 *.pkl
 
 *.bag
+
+/RDPG/trained_models

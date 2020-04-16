@@ -8,6 +8,8 @@ def make_encoder_net(img_in, feature_dim=32, test_mode=False):
     """
     simple encoder architecture
     """
+    img_in = tf.reduce_sum(img_in, axis=0)
+
     conv_1 = keras.layers.Conv2D(
         filters=2,
         kernel_size=[5, 5],

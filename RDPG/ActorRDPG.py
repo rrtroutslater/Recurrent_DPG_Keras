@@ -1,7 +1,7 @@
 from __future__ import print_function
 from ACBase import *
 from EncoderNet import *
-
+import math
 
 class ActorRDPG(ACBase):
     def __init__(self,
@@ -12,6 +12,7 @@ class ActorRDPG(ACBase):
                  learning_rate=0.005,
                  training=True,
                  test_mode=False,
+                 lstm_horizon=20
                  ):
 
         tf.compat.v1.disable_eager_execution()
@@ -23,26 +24,28 @@ class ActorRDPG(ACBase):
         self.learning_rate = learning_rate
         self.training = training
         self.test_mode = test_mode
-        self.lstm_units = 16
+        self.lstm_horizon = lstm_horizon
 
-        # hidden and carry state placeholders
-        self.h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
-        self.c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units])
+        self.lstm_units = 16 # number of units in LSTM cell
 
         # hidden and carry state numpy arrays
-        self.h_prev = np.zeros(shape=(1, self.lstm_units))
-        self.c_prev = np.zeros(shape=(1, self.lstm_units))
-        self.h_prev_t = np.zeros(shape=(1, self.lstm_units))
-        self.c_prev_t = np.zeros(shape=(1, self.lstm_units))
+        self.h_prev = np.random.randn(1, self.lstm_units)
+        self.c_prev = np.random.randn(1, self.lstm_units)
+        self.h_prev_t = np.random.randn(1, self.lstm_units)
+        self.c_prev_t = np.random.randn(1, self.lstm_units)
 
         # actor, mu(o)
-        self.net, self.obs_in, self.act, self.actor_h_sequence, self.actor_h, \
-            self.actor_c = self.make_act_net()
+        self.net, self.obs_in, self.act, self.actor_h_sequence, \
+            self.actor_h, self.actor_c, \
+            self.actor_h_ph, self.actor_c_ph \
+            = self.make_act_net('normal')
         self.net_weights = self.net.trainable_weights
 
         # actor target, mu'(o)
-        self.net_t, self.obs_t_in, self.act_t, self.actor_h_t_sequence, self.actor_h_t, \
-            self.actor_c_t = self.make_act_net()
+        self.net_t, self.obs_t_in, self.act_t, self.actor_h_t_sequence, \
+            self.actor_h_t, self.actor_c_t, \
+            self.actor_h_t_ph, self.actor_c_t_ph \
+            = self.make_act_net('target')
         self.net_t_weights = self.net_t.trainable_weights
 
         # gradients
@@ -61,21 +64,30 @@ class ActorRDPG(ACBase):
         self.sess.run(tf.compat.v1.global_variables_initializer())
         return
 
-    def make_act_net(self):
+    def make_act_net(self, net_type):
         """
         define actor network architecture, used for actor and actor target.
         encoder -> LSTM
+
+        inputs:
+            net type, string to differentiate target/non-target hidden/carry variables
 
         returns:
             keras model 
             input layer
             action output
             hidden state history h[]
-            hidden state h
-            carrt state c
+            hidden state h output
+            carry state c output
+            hidden state h keras variable for manual handling
+            carry state c keras variable for manual handling
         """
+        # variables for tracking hidden state over variable-length episodes
+        h_ph = tf.keras.backend.variable(self.h_prev, name="h"+net_type)
+        c_ph = tf.keras.backend.variable(self.c_prev, name="c"+net_type)
+
         obs_in = keras.layers.Input(
-            shape=self.obs_dim,
+            shape=[None, self.obs_dim[0], self.obs_dim[1], self.obs_dim[2]],
         )
 
         feature = make_encoder_net(obs_in, test_mode=self.test_mode)
@@ -85,21 +97,22 @@ class ActorRDPG(ACBase):
             self.lstm_units,
             activation="tanh",
             recurrent_activation="sigmoid",
+            use_bias=True,
             kernel_initializer='glorot_uniform',
             recurrent_initializer='glorot_uniform',
             bias_initializer='zeros',
             return_sequences=True,
             return_state=True,
             stateful=False,
-        )(feature, initial_state=[self.h_ph, self.c_ph])
+        )(feature, initial_state=[h_ph, c_ph])
 
         act = keras.layers.Dense(
             units=self.act_dim,
             activation="tanh",
         )(lstm_sequence)
 
-        model = keras.Model(inputs=obs_in, outputs=act)
-        return model, obs_in, act, lstm_sequence, h, c
+        model = keras.Model(inputs=obs_in, outputs=[act, h, c])
+        return model, obs_in, act, lstm_sequence, h, c, h_ph, c_ph
 
     def sample_act(self,
                    obs,
@@ -132,8 +145,8 @@ class ActorRDPG(ACBase):
             [self.act, self.actor_h, self.actor_c],
             feed_dict={
                 self.obs_in: obs,
-                self.h_ph: self.h_prev,
-                self.c_ph: self.c_prev,
+                self.actor_h_ph: self.h_prev,
+                self.actor_c_ph: self.c_prev,
             }
         )
 
@@ -144,8 +157,8 @@ class ActorRDPG(ACBase):
                 [self.actor_h_sequence],
                 feed_dict={
                     self.obs_in: obs,
-                    self.h_ph: self.h_prev,
-                    self.c_ph: self.c_prev,
+                    self.actor_h_ph: self.h_prev,
+                    self.actor_c_ph: self.c_prev,
                 }
             )
 
@@ -193,8 +206,8 @@ class ActorRDPG(ACBase):
             [self.act_t, self.actor_h_t, self.actor_c_t],
             feed_dict={
                 self.obs_t_in: obs,
-                self.h_ph: self.h_prev_t,
-                self.c_ph: self.c_prev_t,
+                self.actor_h_t_ph: self.h_prev_t,
+                self.actor_c_t_ph: self.c_prev_t,
             }
         )
 
@@ -205,8 +218,8 @@ class ActorRDPG(ACBase):
                 [self.actor_h_t_sequence],
                 feed_dict={
                     self.obs_t_in: obs,
-                    self.h_ph: self.h_prev_t,
-                    self.c_ph: self.c_prev_t,
+                    self.actor_h_t_ph: self.h_prev_t,
+                    self.actor_c_t_ph: self.c_prev_t,
                 }
             )
 
@@ -242,7 +255,7 @@ class ActorRDPG(ACBase):
         """
         # placeholder for result of backpropagation of objective gradient through Critic Q(s,a)
         dQ_da = tf.keras.backend.placeholder(
-            shape=[None, self.act_dim],
+            shape=[None, None, self.act_dim],
             dtype=tf.float32,
         )
 
@@ -288,14 +301,15 @@ class ActorRDPG(ACBase):
                 feed_dict={
                     self.obs_in: obs,
                     self.dQ_da: dQ_da,
-                    self.h_ph: self.h_prev,
-                    self.c_ph: self.c_prev,
+                    self.actor_h_ph: self.h_prev,
+                    self.actor_c_ph: self.c_prev,
                 }
             )
 
             # divide by batch size * time length
             for i in range(0, len(dQ_dWa)):
-                dQ_dWa[i] /= (obs.shape[0] * obs.shape[1])
+                dQ_dWa[i] /= (obs[0].shape[0] * obs[0].shape[1])
+
 
             # application of gradient
             _ = self.sess.run(
@@ -303,8 +317,8 @@ class ActorRDPG(ACBase):
                 feed_dict={
                     self.obs_in: obs,
                     self.dQ_da: dQ_da,
-                    self.h_ph: self.h_prev,
-                    self.c_ph: self.c_prev,
+                    self.actor_h_ph: self.h_prev,
+                    self.actor_c_ph: self.c_prev,
                 }
             )
 
@@ -317,6 +331,17 @@ class ActorRDPG(ACBase):
 
         return
 
+    def model_predict(self, obs):
+
+        print('h before:\n', self.h_prev)
+        print('c before:\n', self.c_prev)
+        act, h, c = self.net.predict(obs)
+        print(act)
+        print(h)
+        print(c)
+        print('h after:\n', self.h_prev)
+        print('c after:\n', self.c_prev)
+        return
 
 
 if __name__ == "__main__":
@@ -330,25 +355,39 @@ if __name__ == "__main__":
     )
     actor.export_model_figure()
 
+    # test model saving and loading
+    if 0:
+        fn, target_fn = actor.save_model()
+        actor.load_model(fn, target_fn)
 
-    # test forward pass
-    if 1:
+    # test forward pass with model.predict
+    if 0:
         lstm_horizon = 4
         np.random.seed(0)
-        o = np.random.randn(lstm_horizon, 16, 90, 3)
+        o = np.random.randn(1, lstm_horizon, 16, 90, 3)
+        actor.model_predict(o)
+
+    # test forward pass
+    if 0:
+        lstm_horizon = 4
+        # np.random.seed(0)
+        o = np.random.randn(1, lstm_horizon, 16, 90, 3)
         a = actor.sample_act(o)
         actor.display_hidden_state()
-        o1 = np.random.randn(1, 16, 90, 3)
+        o1 = np.random.randn(1, 1, 16, 90, 3)
+        o2 = np.random.randn(1, 1, 16, 90, 3)
  
         print('===================================================')
         a1 = actor.sample_act(o1)
+        print('===================================================')
+        a1 = actor.sample_act(o2)
         print('===================================================')
         a1 = actor.sample_act(o1, reset_hidden_after_sample=True)
 
     # test target forward pass
     if 0: 
         print('===================================================')
-        o1 = np.random.randn(1, 16, 90, 3)
+        o1 = np.random.randn(1, 1, 16, 90, 3)
         a1 = actor.sample_act_target(o1)
         print(a1)
         print('===================================================')
@@ -359,8 +398,8 @@ if __name__ == "__main__":
     if 0:
         lstm_horizon = 4
         np.random.seed(0)
-        o = np.random.randn(lstm_horizon, 16, 90, 3)
-        dQ_da = np.random.randn(lstm_horizon, 3)
+        o = np.random.randn(1, lstm_horizon, 16, 90, 3)
+        dQ_da = np.random.randn(1, lstm_horizon, 3)
         actor.apply_gradients(o, dQ_da, num_step=1)
 
     # test gradient update AFTER forward propagation ~ this is what happens during training

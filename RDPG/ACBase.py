@@ -21,7 +21,9 @@ class ACBase():
         self.net_weights = []
 
         self.net_t = keras.Model()
-        self.net_t_weights = []        
+        self.net_t_weights = []
+
+        self.lstm_horizon = 0  
 
         self.grads = {}
         return
@@ -95,9 +97,12 @@ class ACBase():
         save the network and target network to file, return filenames of saved model
         """
         if net_fname == "":
-            net_fname = self.net_type + "_" + datetime.datetime.now()
+            net_fname = "./trained_models/" + self.net_type + "_" + str(self.lstm_horizon) + "_" + str(datetime.datetime.now())
         if net_t_fname == "":
-            net_fname = self.net_type + "_target_" + datetime.datetime.now()
+            net_t_fname = "./trained_models/" + self.net_type + "_target_" + str(self.lstm_horizon) + "_" + str(datetime.datetime.now())
+
+        print(net_fname)
+        print(net_t_fname)
 
         tf.keras.models.save_model(self.net, net_fname)
         tf.keras.models.save_model(self.net_t, net_t_fname)
@@ -121,9 +126,9 @@ class ACBase():
         return
 
     def display_hidden_state(self,):
-        print('current hidden state:\t', self.h_prev)
-        print('current carry state:\t', self.c_prev)
+        print('current hidden state:\n', self.h_prev)
+        print('current carry state:\n', self.c_prev)
 
     def display_target_hidden_state(self,):
-        print('current TARGET hidden state:\t', self.h_prev_t)
-        print('current TARGET carry state:\t', self.c_prev_t)
+        print('current TARGET hidden state:\n', self.h_prev_t)
+        print('current TARGET carry state:\n', self.c_prev_t)

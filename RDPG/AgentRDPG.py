@@ -1,11 +1,11 @@
 from __future__ import print_function
 from ActorRDPG import *
 from CriticRDPG import *
-from Encoder import *
 from EncoderNet import *
 import matplotlib.pyplot as plt
 import os
 import pickle
+import math
 
 
 class AgentRDPG():
@@ -13,7 +13,6 @@ class AgentRDPG():
                  session,
                  actor,
                  critic,
-                 encoder,
                  lstm_horizon=4,
                  gamma=0.95,
                  tau_actor=0.1,
@@ -23,7 +22,6 @@ class AgentRDPG():
         self.sess = session
         self.actor = actor
         self.critic = critic
-        self.encoder = encoder
         self.lstm_horizon = lstm_horizon
         self.gamma = gamma
         self.tau_actor = tau_actor
@@ -64,8 +62,8 @@ class AgentRDPG():
             act_target_pre_episode = self.actor.sample_act_target(obs_target_pre_episode)
 
             # 2) use actions and obs before episode to update Q network hidden states
-            q_pre_episode = self.critic.sample_q(obs_pre_episode, act_pre_episode[0])
-            q_target_pre_episode = self.critic.sample_q_target(obs_target_pre_episode, act_target_pre_episode[0])
+            q_pre_episode = self.critic.sample_q(obs_pre_episode, act_pre_episode)
+            q_target_pre_episode = self.critic.sample_q_target(obs_target_pre_episode, act_target_pre_episode)
 
             # actions, rewards which occurred during episode
             act = episode['act']
@@ -75,27 +73,48 @@ class AgentRDPG():
             for i in range(0, num_update):
                 # action and Q values from target nets, used for training critic Q function
                 act_target = self.actor.sample_act_target(obs_target)
-                q_target = self.critic.sample_q_target(obs_target, act_target[0])[0]
+                q_target = self.critic.sample_q_target(obs_target, act_target)
 
                 # regression label
                 gamma = 0.95
-                y = reward + gamma * q_target[0].T
+                reward = np.expand_dims(reward, axis=0)
+                y = np.zeros(shape=(1, reward.shape[1], 1))
+                if (math.isnan(y[0][0])):
+                    print('nan found!')
+                    continue
+                for i in range(0, reward.shape[1]):
+                    y[:,i,:] = reward[:,i,:] + q_target[:,i,:]* gamma ** i
+                # y = reward + gamma * q_target
 
-                q_pred = self.critic.sample_q(obs, act[0], reset_hidden_after_sample=True)
-                print('-----------------------------------')
-                print('y target:\n', y)
-                print('q predict:\n', q_pred)
-
+                q_pred = self.critic.sample_q(obs, act, reset_hidden_after_sample=True)
+                # print('-----------------------------------')
+                # print('y target:\n', y)
+                # print('reward shape:\t', reward.shape)
+                # print(reward)
+                # print('y shape:\t', y.shape)
+                # print(y)
+                # print('y target:\n', y)
+                # print('q predict:\n', q_pred)
+                if (math.isnan(y[0][0])):
+                    print('nan found')
+                    print('act:\n', act_target[0])
+                    # print('obs target:\n', obs_target)
+                    print('y target:\n', y)
+                    print('q_target:\n', q_target[0].T)
+                    print('reward:\n', reward)
+                    input('press key to cont:')
+                    continue
+                
                 # get gradients from Q net, which are backpropagated through actor and encoder
                 # NOTE: this must be done before the train_on_batch below
                 # mu(o)
                 act_for_grad = self.actor.sample_act(obs, reset_hidden_after_sample=True)
 
                 # for actor grad update
-                dQ_da = self.critic.get_dQ_da_critic(obs, act_for_grad[0])
+                dQ_da = self.critic.get_dQ_da_critic(obs, act_for_grad)
 
                 # take a gradient step on the Q network weights
-                l = self.critic.train_critic(act[0], obs, y, num_step=1)
+                l = self.critic.train_critic(act, obs, y, num_step=1)
                 loss.append(l[0])
 
                 # grad step on actor
@@ -132,28 +151,31 @@ class AgentRDPG():
                         lstm_horizon):
         """
         """
-        np.random.seed(0)
+        # np.random.seed(0)
         n = dataset['img_0'].shape[0]
 
         good_data = False
         while not good_data:
-            # idx = np.random.randint(1, n - self.lstm_horizon - 1)
             idx = np.random.randint(1, n - lstm_horizon - 1)
 
             data_pre_episode = {}
-            data_pre_episode['img_0'] = dataset['img_0'][:idx]
-            data_pre_episode['img_1'] = dataset['img_1'][:idx+1]
+            data_pre_episode['img_0'] = [dataset['img_0'][:idx]]
+            data_pre_episode['img_1'] = [dataset['img_1'][:idx+1]]
             data_pre_episode['act'] = [dataset['act'][:idx, :]]
             data_pre_episode['reward'] = [dataset['reward'][:idx]]
 
             episode = {}
-            episode['img_0'] = dataset['img_0'][idx:idx+lstm_horizon]
-            episode['img_1'] = dataset['img_1'][idx+1: idx + lstm_horizon + 1]
+            episode['img_0'] = [dataset['img_0'][idx:idx+lstm_horizon]]
+            episode['img_1'] = [dataset['img_1'][idx+1: idx + lstm_horizon + 1]]
             episode['act'] = np.array([dataset['act'][idx:idx+lstm_horizon, :]])
             episode['reward'] = np.array([dataset['reward'][idx:idx+lstm_horizon]])
 
-            if np.sum(episode['reward']) > 0:
+            if np.sum(episode['reward']) > 0:# and not math.isnan(episode['reward'][0]):
                 good_data = True
+
+            if math.isnan(episode['reward'][0][0]):
+                print('found a nan, not using this sample')
+                good_data = False
         return data_pre_episode, episode
 
 
@@ -175,77 +197,13 @@ if __name__ == "__main__":
     data_dir = './training_dicts/'
     fn_list = os.listdir(data_dir)
 
-    # loss_20 = []
-    # for i in range(120):
-    #     # idx = np.random.randint(len(fn_list))
-    #     idx = 0
-    #     with open(data_dir + fn_list[idx], 'rb') as f:
-    #         dataset = pickle.load(f)
-    #     l = agent.train_rdpg(dataset, num_episode=4, lstm_horizon=20)
-    #     for i in range(len(l)):
-    #         loss_20.append(l[i])
-    # loss_20 = [loss_20[i] / 20 for i in range(0, len(loss_20))]
-
-    # critic = CriticRDPG(session, )  # test_mode=True)
-    # actor = ActorRDPG(session, )  # test_mode=True)
-    # encoder = Encoder(session, )  # test_mode=True)
-    # agent = AgentRDPG(session, actor, critic, encoder)
-
-    # loss_16 = []
-    # for i in range(120):
-    #     # idx = np.random.randint(len(fn_list))
-    #     idx = 0
-    #     with open(data_dir + fn_list[idx], 'rb') as f:
-    #         dataset = pickle.load(f)
-    #     l = agent.train_rdpg(dataset, num_episode=4, lstm_horizon=16)
-    #     for i in range(len(l)):
-    #         loss_16.append(l[i])
-    # loss_16 = [loss_16[i] / 16 for i in range(0, len(loss_16))]
-
-    # critic = CriticRDPG(session, )  # test_mode=True)
-    # actor = ActorRDPG(session, )  # test_mode=True)
-    # encoder = Encoder(session, )  # test_mode=True)
-    # agent = AgentRDPG(session, actor, critic, encoder)
-
-    # loss_12 = []
-    # for i in range(120):
-    #     # idx = np.random.randint(len(fn_list))
-    #     idx = 0
-    #     with open(data_dir + fn_list[idx], 'rb') as f:
-    #         dataset = pickle.load(f)
-    #     l = agent.train_rdpg(dataset, num_episode=4, lstm_horizon=12)
-    #     for i in range(len(l)):
-    #         loss_12.append(l[i])
-    # loss_12 = [loss_12[i] / 12 for i in range(0, len(loss_12))]
-
-    # critic = CriticRDPG(session, )  # test_mode=True)
-    # actor = ActorRDPG(session, )  # test_mode=True)
-    # encoder = Encoder(session, )  # test_mode=True)
-    # agent = AgentRDPG(session, actor, critic, encoder)
-
-    # loss_8 = []
-    # for i in range(120):
-    #     # idx = np.random.randint(len(fn_list))
-    #     idx = 0
-    #     with open(data_dir + fn_list[idx], 'rb') as f:
-    #         dataset = pickle.load(f)
-    #     l = agent.train_rdpg(dataset, num_episode=4, lstm_horizon=8)
-    #     for i in range(len(l)):
-    #         loss_8.append(l[i])
-    # loss_8 = [loss_8[i] / 8 for i in range(0, len(loss_8))]
-    # critic = CriticRDPG(session, )  # test_mode=True)
-    # actor = ActorRDPG(session, )  # test_mode=True)
-    # encoder = Encoder(session, )  # test_mode=True)
-    # agent = AgentRDPG(session, actor, critic, encoder)
-
-    critic = CriticRDPG(session, )  # test_mode=True)
-    actor = ActorRDPG(session, )  # test_mode=True)
-    encoder = Encoder(session, )  # test_mode=True)
-    agent = AgentRDPG(session, actor, critic, encoder)
+    # 8
+    critic = CriticRDPG(session, lstm_horizon=8)  # test_mode=True)
+    actor = ActorRDPG(session, lstm_horizon=8)  # test_mode=True)
+    agent = AgentRDPG(session, actor, critic)
     loss_8 = []
-    for i in range(200):
+    for i in range(3000):
         idx = np.random.randint(len(fn_list))
-        # idx = 0
         with open(data_dir + fn_list[idx], 'rb') as f:
             dataset = pickle.load(f)
         l = agent.train_rdpg(dataset, 
@@ -255,27 +213,7 @@ if __name__ == "__main__":
         for i in range(len(l)):
             loss_8.append(l[i])
     loss_8 = [loss_8[i] / 8 for i in range(0, len(loss_8))]
-
-    # plt.plot(loss_20, label="20")
-    # plt.legend(loc="upper right")
-    # plt.title('Q-function Loss')
-    # plt.xlabel('iter')
-    # plt.ylabel('')
-    # plt.show()
-
-    # plt.plot(loss_16, label="16")
-    # plt.legend(loc="upper right")
-    # plt.title('Q-function Loss')
-    # plt.xlabel('iter')
-    # plt.ylabel('')
-    # plt.show()
-
-    # plt.plot(loss_12, label="12")
-    # plt.legend(loc="upper right")
-    # plt.title('Q-function Loss')
-    # plt.xlabel('iter')
-    # plt.ylabel('')
-    # plt.show()
+    loss_8 = np.convolve(np.array(loss_8), np.ones(40), 'valid') / 40
 
     plt.plot(loss_8, label="8")
     plt.legend(loc="upper right")
@@ -284,11 +222,82 @@ if __name__ == "__main__":
     plt.ylabel('')
     plt.show()
 
-    # plt.plot(loss_4, label="4")
-    # plt.legend(loc="upper right")
-    # plt.title('Q-function Loss')
-    # plt.xlabel('iter')
-    # plt.ylabel('')
-    # plt.show()
+    # 12
+    critic = CriticRDPG(session, lstm_horizon=12)  # test_mode=True)
+    actor = ActorRDPG(session, lstm_horizon=12)  # test_mode=True)
+    agent = AgentRDPG(session, actor, critic)
+    loss_12 = []
+    for i in range(3000):
+        idx = np.random.randint(len(fn_list))
+        with open(data_dir + fn_list[idx], 'rb') as f:
+            dataset = pickle.load(f)
+        l = agent.train_rdpg(dataset, 
+                            num_episode_per_dataset=1, 
+                            lstm_horizon=12,
+                            num_update=1)
+        for i in range(len(l)):
+            loss_12.append(l[i])
+    loss_12 = [loss_12[i] / 12 for i in range(0, len(loss_12))]
+    loss_12 = np.convolve(np.array(loss_12), np.ones(40), 'valid') / 40
+
+    plt.plot(loss_12, label="12")
+    plt.legend(loc="upper right")
+    plt.title('Q-function Loss')
+    plt.xlabel('iter')
+    plt.ylabel('')
+    plt.show()
+
+    # 16
+    critic = CriticRDPG(session, lstm_horizon=16)  # test_mode=True)
+    actor = ActorRDPG(session, lstm_horizon=16)  # test_mode=True)
+    agent = AgentRDPG(session, actor, critic)
+    loss_16 = []
+    for i in range(3000):
+        idx = np.random.randint(len(fn_list))
+        with open(data_dir + fn_list[idx], 'rb') as f:
+            dataset = pickle.load(f)
+        l = agent.train_rdpg(dataset, 
+                            num_episode_per_dataset=1, 
+                            lstm_horizon=16,
+                            num_update=1)
+        for i in range(len(l)):
+            loss_16.append(l[i])
+    loss_16 = [loss_16[i] / 16 for i in range(0, len(loss_16))]
+    loss_16 = np.convolve(np.array(loss_16), np.ones(40), 'valid') / 40
+
+    plt.plot(loss_16, label="16")
+    plt.legend(loc="upper right")
+    plt.title('Q-function Loss')
+    plt.xlabel('iter')
+    plt.ylabel('')
+    plt.show()
+
+    # 20
+    critic = CriticRDPG(session, lstm_horizon=20)  # test_mode=True)
+    actor = ActorRDPG(session, lstm_horizon=20)  # test_mode=True)
+    agent = AgentRDPG(session, actor, critic)
+    loss_20 = []
+    for i in range(3000):
+        idx = np.random.randint(len(fn_list))
+        # idx = 0
+        with open(data_dir + fn_list[idx], 'rb') as f:
+            dataset = pickle.load(f)
+        l = agent.train_rdpg(dataset, 
+                            num_episode_per_dataset=1, 
+                            lstm_horizon=20,
+                            num_update=1)
+        for i in range(len(l)):
+            loss_20.append(l[i])
+    loss_20 = [loss_20[i] / 20 for i in range(0, len(loss_20))]
+    loss_20 = np.convolve(np.array(loss_20), np.ones(40), 'valid') / 40
+
+    plt.plot(loss_20, label="20")
+    plt.legend(loc="upper right")
+    plt.title('Q-function Loss')
+    plt.xlabel('iter')
+    plt.ylabel('')
+    plt.show()
+    critic.save_model()
+    actor.save_model()
 
     pass
