@@ -95,18 +95,20 @@ class ACBase():
 
     def save_model(self, 
             net_fname="",
-            net_t_fname=""
+            net_t_fname="",
+            learning_rate="",
+            tau="",
             ):
         """
         save the network and target network to file, return filenames of saved model
         """
         if net_fname == "":
-            net_fname = "./trained_models/" + self.net_type + "_" + str(self.lstm_horizon) + "_" + str(datetime.datetime.now())
+            # net_fname = "./trained_models/" + self.net_type + "_" + str(self.lstm_horizon) + "_" + str(datetime.datetime.now())
+            net_fname = "./trained_models/" + self.net_type + "_" + str(self.lstm_horizon) + "_" + learning_rate + "_" + tau
         if net_t_fname == "":
-            net_t_fname = "./trained_models/" + self.net_type + "_target_" + str(self.lstm_horizon) + "_" + str(datetime.datetime.now())
+            # net_t_fname = "./trained_models/" + self.net_type + "_target_" + str(self.lstm_horizon) + "_" + str(datetime.datetime.now())
+            net_t_fname = "./trained_models/" + self.net_type + "_target_" + str(self.lstm_horizon) + "_" + learning_rate  + "_" + tau
 
-        # tf.keras.models.save_model(self.net, net_fname)
-        # tf.keras.models.save_model(self.net_t, net_t_fname)
         self.net.save_weights(net_fname, save_format='tf')
         self.net_t.save_weights(net_t_fname, save_format='tf')
         return net_fname, net_t_fname
