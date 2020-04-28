@@ -2,37 +2,37 @@ from __future__ import print_function
 from ACBase import *
 from EncoderNet import *
 import math
+import h5py
 
 class ActorRDPG(ACBase):
     def __init__(self,
                  session,
                  obs_dim=[16, 90, 3],
-                #  obs_dim=32,
                  act_dim=3,
                  learning_rate=0.005,
                  training=True,
                  test_mode=False,
-                 lstm_horizon=20
+                 lstm_units=32,
+                 lstm_horizon=20,
+                 actor_fn="",
+                 actor_target_fn="",
                  ):
 
         tf.compat.v1.disable_eager_execution()
         self.set_network_type("actor")
 
         self.sess = session
+        # self.sess = tf.compat.v1.Session()
         self.obs_dim = obs_dim
         self.act_dim = act_dim
-        self.learning_rate = learning_rate
         self.training = training
+        self.learning_rate = learning_rate
         self.test_mode = test_mode
+        self.lstm_units = lstm_units
         self.lstm_horizon = lstm_horizon
 
-        self.lstm_units = 16 # number of units in LSTM cell
-
         # hidden and carry state numpy arrays
-        self.h_prev = np.random.randn(1, self.lstm_units)
-        self.c_prev = np.random.randn(1, self.lstm_units)
-        self.h_prev_t = np.random.randn(1, self.lstm_units)
-        self.c_prev_t = np.random.randn(1, self.lstm_units)
+        self.reset_hidden_states()
 
         # actor, mu(o)
         self.net, self.obs_in, self.act, self.actor_h_sequence, \
@@ -61,7 +61,24 @@ class ActorRDPG(ACBase):
             zip(self.dQ_dWa, self.net_weights)
         )
 
-        self.sess.run(tf.compat.v1.global_variables_initializer())
+        # self.sess.run(tf.compat.v1.global_variables_initializer())
+
+        # start by copying all weights into target network
+        return
+
+    def reset_hidden_states(self,):
+        # self.h_prev = np.ones(shape=(1, self.lstm_units))
+        # self.c_prev = np.ones(shape=(1, self.lstm_units))
+        # self.h_prev_t = np.ones(shape=(1, self.lstm_units))
+        # self.c_prev_t = np.ones(shape=(1, self.lstm_units))
+        self.h_prev = np.zeros(shape=(1, self.lstm_units))
+        self.c_prev = np.zeros(shape=(1, self.lstm_units))
+        self.h_prev_t = np.zeros(shape=(1, self.lstm_units))
+        self.c_prev_t = np.zeros(shape=(1, self.lstm_units))
+        # self.h_prev = np.random.randn(1, self.lstm_units)
+        # self.c_prev = np.random.randn(1, self.lstm_units)
+        # self.h_prev_t = np.random.randn(1, self.lstm_units)
+        # self.c_prev_t = np.random.randn(1, self.lstm_units)
         return
 
     def make_act_net(self, net_type):
@@ -83,20 +100,25 @@ class ActorRDPG(ACBase):
             carry state c keras variable for manual handling
         """
         # placeholders for tracking hidden state over variable-length episodes
-        h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h"+net_type)
-        c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c"+net_type)
+        h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h_"+net_type)
+        c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c_"+net_type)
 
         obs_in = keras.layers.Input(
             shape=[None, self.obs_dim[0], self.obs_dim[1], self.obs_dim[2]],
         )
 
-        feature = make_encoder_net(obs_in, test_mode=self.test_mode)
+        feature = make_encoder_net(
+            obs_in, 
+            test_mode=self.test_mode, 
+            name="actor_"+net_type,
+        )
         feature = tf.expand_dims(feature, axis=0)
 
         lstm_sequence, h, c = tf.keras.layers.LSTM(
-            self.lstm_units,
+            units=self.lstm_units,
             activation="tanh",
-            recurrent_activation="sigmoid",
+            recurrent_activation="tanh",
+            # recurrent_activation="sigmoid",
             use_bias=True,
             kernel_initializer='glorot_uniform',
             recurrent_initializer='glorot_uniform',
@@ -104,12 +126,32 @@ class ActorRDPG(ACBase):
             return_sequences=True,
             return_state=True,
             stateful=False,
+            name="lstm_act_"+net_type,
+            recurrent_dropout=0.02,
+            dropout=0.02,
         )(feature, initial_state=[h_ph, c_ph])
+
+        pre_act = keras.layers.Dense(
+            units=16,
+            activation=None,
+            name="pre_act_"+net_type,
+        )(lstm_sequence)
+
 
         act = keras.layers.Dense(
             units=self.act_dim,
             activation="tanh",
-        )(lstm_sequence)
+            # activation="relu",
+            # activation="linear",
+            name="act_"+net_type
+        # )(lstm_sequence)
+        )(pre_act)
+
+        if 1:
+            print('feature shape:\t', feature.get_shape())
+            print('seq shape:\t', lstm_sequence.get_shape())
+            print('pre_act_shape:\t', pre_act.get_shape())
+            print('act shape:\t', act.get_shape())
 
         model = keras.Model(inputs=[obs_in], outputs=[act, h, c])
         return model, obs_in, act, lstm_sequence, h, c, h_ph, c_ph
@@ -175,7 +217,6 @@ class ActorRDPG(ACBase):
             print('act:\n', act)
             self.display_hidden_state()
             print('\nh history:\n', hidden_state_history)
-
         return act
 
     def sample_act_target(self,
@@ -188,10 +229,7 @@ class ActorRDPG(ACBase):
         input:input shapes
             obs: observation, numpy array of shape (N, num_timestep, obs_dim)\
             reset_hidden_after_sample: indicates whether to reset hidden state to initial
-            value after forward propagation, used to ensure grad calcs are based on accurate
-            initial hidden state during training
-
-        returns:
+            value after forward propagreset_hidden_after_sample
             action, numpy array of shape (N, num_timestep, act_dim)
         """
         if reset_hidden_after_sample:
@@ -236,7 +274,6 @@ class ActorRDPG(ACBase):
             print('\nact TARGET:\n', act_t)
             self.display_target_hidden_state()
             print('\nhidden state history:\n', hidden_state_history)
-
         return act_t
 
     def initialize_gradients(self):
@@ -266,7 +303,6 @@ class ActorRDPG(ACBase):
             self.net_weights,
             -dQ_da,
         )
-
         return dQ_da, dQ_dWa
 
     def apply_gradients(self,
@@ -295,22 +331,6 @@ class ActorRDPG(ACBase):
                       self.net_weights[0].eval(session=self.sess))
                 self.display_hidden_state()
 
-            # grad calculation
-            dQ_dWa = self.sess.run(
-                self.dQ_dWa,
-                feed_dict={
-                    self.obs_in: obs,
-                    self.dQ_da: dQ_da,
-                    self.actor_h_ph: self.h_prev,
-                    self.actor_c_ph: self.c_prev,
-                }
-            )
-
-            # divide by batch size * time length
-            for i in range(0, len(dQ_dWa)):
-                dQ_dWa[i] /= (obs[0].shape[0] * obs[0].shape[1])
-
-
             # application of gradient
             _ = self.sess.run(
                 [self.grad_step],
@@ -328,7 +348,6 @@ class ActorRDPG(ACBase):
                 for i in range(0, len(dQ_dWa)):
                     print(dQ_dWa[i].shape)
                 self.display_hidden_state()
-
         return
 
     def model_predict(self, obs):
@@ -356,7 +375,7 @@ if __name__ == "__main__":
     actor.export_model_figure()
 
     # test model saving and loading
-    if 1:
+    if 0:
         print(type(actor.net))
         actor.net.save_weights('egg_mpode', save_format='tf')
         actor.net.load_weights('egg_mpode')
@@ -364,14 +383,12 @@ if __name__ == "__main__":
     # test forward pass with model.predict
     if 0:
         lstm_horizon = 4
-        np.random.seed(0)
         o = np.random.randn(1, lstm_horizon, 16, 90, 3)
         actor.model_predict(o)
 
     # test forward pass
-    if 1:
+    if 0:
         lstm_horizon = 4
-        # np.random.seed(0)
         o = np.random.randn(1, lstm_horizon, 16, 90, 3)
         a = actor.sample_act(o)
         actor.display_hidden_state()
@@ -396,9 +413,8 @@ if __name__ == "__main__":
         print(a1)
 
     # test gradient update
-    if 0:
+    if 1:
         lstm_horizon = 4
-        np.random.seed(0)
         o = np.random.randn(1, lstm_horizon, 16, 90, 3)
         dQ_da = np.random.randn(1, lstm_horizon, 3)
         actor.apply_gradients(o, dQ_da, num_step=1)
@@ -406,7 +422,6 @@ if __name__ == "__main__":
     # test gradient update AFTER forward propagation ~ this is what happens during training
     if 0: 
         lstm_horizon = 4
-        np.random.seed(0)
         o = np.random.randn(lstm_horizon, 16, 90, 3)
         a = actor.sample_act(o)
 
@@ -415,4 +430,10 @@ if __name__ == "__main__":
         actor.apply_gradients(o1, dQ_da, num_step=1)
 
     pass
+
+
+
+
+
+
 

@@ -2,37 +2,37 @@ from __future__ import print_function
 from ACBase import *
 from EncoderNet import *
 import matplotlib.pyplot as plt
+import h5py
 
 class CriticRDPG(ACBase):
     def __init__(self,
                  session,
-                #  obs_dim=32,
                  obs_dim=[16, 90, 3],
                  act_dim=3,
                  learning_rate=0.001,
                  training=True,
                  test_mode=False,
+                 lstm_units=32,
                  lstm_horizon=20,
+                 critic_fn="",
+                 critic_target_fn="",
                  ):
 
         tf.compat.v1.disable_eager_execution()
         self.set_network_type("critic")
 
         self.sess = session
+        # self.sess = tf.compat.v1.Session()
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.training = training
         self.learning_rate = learning_rate
         self.test_mode = test_mode
+        self.lstm_units = lstm_units
         self.lstm_horizon = lstm_horizon
 
-        self.lstm_units = 16 # number of units in LSTM cell
-
         # hidden and carry state numpy arrays
-        self.h_prev = np.random.randn(1, self.lstm_units)
-        self.c_prev = np.random.randn(1, self.lstm_units)
-        self.h_prev_t = np.random.randn(1, self.lstm_units)
-        self.c_prev_t = np.random.randn(1, self.lstm_units)
+        self.reset_hidden_states()
 
         # critic, Q(o, mu(o))
         self.net, self.act_in, self.obs_in, self.q, self.critic_h_sequence, \
@@ -40,12 +40,11 @@ class CriticRDPG(ACBase):
             self.critic_h_ph, self.critic_c_ph \
             = self.make_Q_net('normal')
         self.net_weights = self.net.trainable_weights
-        self.net.compile(loss='mean_squared_error', optimizer='adam')
 
         # loss, used for grad calcs
         self.y_ph = tf.keras.backend.placeholder(shape=[None, None, 1])
-        self.loss = tf.reduce_sum(tf.reduce_sum(
-            tf.square(self.q - self.y_ph), axis=0), axis=0)
+        mse = tf.keras.losses.MeanSquaredError()
+        self.loss = mse(self.y_ph, self.q)
 
         # critic target, Q'(o', mu(o'))
         self.net_t, self.act_in_t, self.obs_in_t,  self.q_t, self.critic_h_t_sequence, \
@@ -64,11 +63,43 @@ class CriticRDPG(ACBase):
         # optimizer, grad step
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
         self.grad_step = self.optimizer.apply_gradients(
-            zip(self.dL_dWq, self.net_weights)
+            zip(self.dL_dWq, self.net_weights),
         )
 
-        self.sess.run(tf.compat.v1.global_variables_initializer())
+        # self.sess.run(tf.compat.v1.global_variables_initializer())
+
+        # start by copying all weights into target network
+        # self.update_target_net(copy_all=True)
         return
+
+    def reset_hidden_states(self,):
+        # self.h_prev = np.ones(shape=(1, self.lstm_units))
+        # self.c_prev = np.ones(shape=(1, self.lstm_units))
+        # self.h_prev_t = np.ones(shape=(1, self.lstm_units))
+        # self.c_prev_t = np.ones(shape=(1, self.lstm_units))
+        self.h_prev = np.zeros(shape=(1, self.lstm_units))
+        self.c_prev = np.zeros(shape=(1, self.lstm_units))
+        self.h_prev_t = np.zeros(shape=(1, self.lstm_units))
+        self.c_prev_t = np.zeros(shape=(1, self.lstm_units))
+        # self.h_prev = np.random.randn(1, self.lstm_units)
+        # self.c_prev = np.random.randn(1, self.lstm_units)
+        # self.h_prev_t = np.random.randn(1, self.lstm_units)
+        # self.c_prev_t = np.random.randn(1, self.lstm_units)
+        return
+
+    def get_loss(self, act, obs, y):
+        # loss = self.net.test_on_batch([act, obs], y=y)
+        loss = self.sess.run(
+            self.loss,
+            feed_dict={
+                self.y_ph: y,
+                self.act_in: act,
+                self.obs_in: obs,
+                self.critic_h_ph: self.h_prev,
+                self.critic_c_ph: self.c_prev,
+            }
+        )
+        return loss
 
     def make_Q_net(self, net_type):
         """
@@ -89,8 +120,8 @@ class CriticRDPG(ACBase):
             carry state c keras variable for manual handling
         """
         # placeholders for tracking hidden state over variable-length episodes
-        h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h"+net_type)
-        c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c"+net_type)
+        h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h_"+net_type)
+        c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c_"+net_type)
 
         act_in = tf.keras.layers.Input(shape=[None, self.act_dim], name="act_in")
         obs_in = tf.keras.layers.Input(
@@ -98,25 +129,40 @@ class CriticRDPG(ACBase):
             name="obs_in"
         )
 
-        feature = make_encoder_net(obs_in, test_mode=self.test_mode)
+        feature = make_encoder_net(
+            obs_in, 
+            test_mode=self.test_mode, 
+            name="critic_"+net_type
+        )
         feature = tf.expand_dims(feature, axis=0)
+
+        act_expanded = keras.layers.Dense(
+            units=12,
+            activation="tanh",
+            name="Q_act_expand"+net_type,
+        )(act_in)
 
         # act_for_lstm = tf.expand_dims(act_in, axis=0)
         # act_obs_in = tf.concat([act_for_lstm, feature], axis=2)
-        act_obs_in = tf.concat([act_in, feature], axis=2)
+        # act_obs_in = tf.concat([act_in, feature], axis=2)
+        act_obs_in = tf.concat([act_expanded, feature], axis=2)
 
         lstm_sequence, h, c = keras.layers.LSTM(
             units=self.lstm_units,
             activation="tanh",
-            recurrent_activation="tanh",
+            recurrent_activation="sigmoid",
             return_sequences=True,
             return_state=True,
             stateful=False,
+            name="lstm_critic_"+net_type,
+            recurrent_dropout=0.02,
+            dropout=0.02,
         )(act_obs_in, initial_state=[h_ph, c_ph])
 
         q = keras.layers.Dense(
             units=1,
-            activation='relu'
+            activation='relu',
+            name="Q_"+net_type,
         )(lstm_sequence)
 
         model = keras.Model(inputs=[act_in, obs_in], outputs=[q, h, c])
@@ -247,7 +293,6 @@ class CriticRDPG(ACBase):
             print('\nq:\n', q_t)
             self.display_target_hidden_state()
             print('\nhidden state history:\n', hidden_state_history)        
-   
 
         return q_t
 
@@ -286,7 +331,7 @@ class CriticRDPG(ACBase):
             placeholder for upstream gradient of Bellman Error w.r.t. Q function output
             gradient of Bellman Error w.r.t. Q network weights
             gradient of Bellman Error w.r.t. action input 
-                backpropagated through actor and feature extractor during training
+                backpropagated through actor and feature extractor during training.eval(session=self.sess)[0]
             gradient of Bellman Error w.r.t. observation input
                 backpropagated through feature extractor during training
         """
@@ -301,30 +346,42 @@ class CriticRDPG(ACBase):
             self.q,
             self.act_in,
         )
-
         return dL_dWq, dQ_da
 
-    def train_critic(self, act, obs, y, num_step=100):
+    def train_critic(self, act, obs, y, num_step=1):
         """
         take a gradient step on critic function
         """
-        # y = np.expand_dims(y, axis=0)
         losses = []
 
-        for i in range(num_step):
-            loss, _ = self.sess.run(
-                [self.loss, self.grad_step],
-                feed_dict={
-                    self.y_ph: y,
-                    self.act_in: act,
-                    self.obs_in: obs,
-                    self.critic_h_ph: self.h_prev,
-                    self.critic_c_ph: self.c_prev,
-                }
-            )
-            losses.append(loss[0])
+        # print('WEIGHTS in train critic BEFORE:\n', self.net_weights[0].eval(self.sess)[0][0)
 
+        _ = self.sess.run(
+            [self.grad_step],
+            feed_dict={
+                self.y_ph: y,
+                self.act_in: act,
+                self.obs_in: obs,
+                self.critic_h_ph: self.h_prev,
+                self.critic_c_ph: self.c_prev,
+            }
+        )
+
+        loss = self.sess.run(
+            [self.loss],
+            feed_dict={
+                self.y_ph: y,
+                self.act_in: act,
+                self.obs_in: obs,
+                self.critic_h_ph: self.h_prev,
+                self.critic_c_ph: self.c_prev,
+            }
+        )
+        losses.append(loss[0])
+
+        # print('WEIGHTS in train critic AFTER:\n', self.net_weights[0].eval(self.sess)[0][0][0])
         return losses
+
 
 if __name__ == "__main__":
     session = tf.compat.v1.Session()
@@ -334,7 +391,6 @@ if __name__ == "__main__":
         test_mode=True,
     )
 
-    np.random.seed(0)
     # test forward pass on series of single observations
     if 0:
         for i in range(0, 4):
