@@ -10,6 +10,14 @@ def make_encoder_net(img_in, feature_dim=48, test_mode=False, name=""):
     """
     img_in = tf.reduce_sum(img_in, axis=0)
 
+    # img_in = tf.reshape(img_in, [-1, 16, 90, 3])
+    # img_in = tf.split(img_in, img_in.get_shape()[1], axis=0)
+    # print(type(N))
+
+    # print(img_in.get_shape())
+    # img_in = tf.reshape(img_in, shape=[N*T, o1, o2, o3])
+    # print(img_in.get_shape())
+
     # conv_1 = keras.layers.Conv2D(
     #     filters=2,
     #     kernel_size=[7, 7],
@@ -138,7 +146,8 @@ def make_encoder_net(img_in, feature_dim=48, test_mode=False, name=""):
         kernel_size=[3, 3],
         strides=[1, 2],
         padding='same',
-        activation=keras.layers.LeakyReLU(alpha=0.3),
+        # activation=keras.layers.LeakyReLU(alpha=0.3),
+        activation=None,
         name=name+"_7",
     )(conv_6)
 
@@ -159,6 +168,7 @@ def make_encoder_net(img_in, feature_dim=48, test_mode=False, name=""):
         print('dense shape:\t', flat.get_shape())
         print('feature shape:\t', feature.get_shape())
     return feature
+
 
 
 if __name__ == "__main__":

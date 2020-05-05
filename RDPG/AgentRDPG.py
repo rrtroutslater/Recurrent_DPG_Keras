@@ -1,7 +1,8 @@
 from __future__ import print_function
 from ActorRDPG import *
 from CriticRDPG import *
-from EncoderNet import *
+# from EncoderNet import *
+from Encoder import *
 import matplotlib.pyplot as plt
 import os
 import pickle
@@ -13,6 +14,7 @@ class AgentRDPG():
                  session,
                  actor,
                  critic,
+                 encoder,
                  lstm_horizon=4,
                  gamma=0.95,
                  tau_actor=0.1,
@@ -22,6 +24,7 @@ class AgentRDPG():
         self.sess = session
         self.actor = actor
         self.critic = critic
+        self.encoder = encoder
         self.lstm_horizon = lstm_horizon
         self.gamma = gamma
         self.tau_actor = tau_actor
@@ -53,10 +56,22 @@ class AgentRDPG():
             lstm_horizon=lstm_horizon)
 
         # extract observations (features) from images in dataset
-        obs_pre_episode = data_pre_episode['img_0']
-        obs_target_pre_episode = data_pre_episode['img_1']
-        obs = episode['img_0']
-        obs_target = episode['img_1']
+        # obs_pre_episode = data_pre_episode['img_0']
+        # obs_target_pre_episode = data_pre_episode['img_1']
+        # obs = episode['img_0']
+        # obs_target = episode['img_1']
+        obs_pre_episode = self.encoder.get_obs(
+            np.array(data_pre_episode['img_0'])
+        )
+        obs_target_pre_episode = self.encoder.get_obs(
+            np.array(data_pre_episode['img_1'])
+        )
+        obs = self.encoder.get_obs(
+            np.array(episode['img_0'])
+        )
+        obs_target = self.encoder.get_obs(
+            np.array(episode['img_1'])
+        )
 
         # forward propagate through all pre-episode data to initialize hidden state
         # 1) get pre-episode actions from actor network, update hidden states of actor, actor target
@@ -143,6 +158,11 @@ class AgentRDPG():
             act += np.random.randn(self.actor.act_dim) * variance
         return act
 
+    def get_obs(self, img):
+        with self.sess.as_default():
+            obs = self.encoder.get_obs(img)
+        return obs
+
     def get_q_pred(self,
                    obs,
                    act,
@@ -183,8 +203,7 @@ class AgentRDPG():
 
 
 if __name__ == "__main__":
-    # data_dir = './training_dicts_UNTRAINED/'
-    data_dir = './training_dicts_TRAINED_1/'
+    data_dir = './training_data/rlbp_data/'
     fn_list = os.listdir(data_dir)
 
     fn_train_list = np.random.choice(fn_list, int(0.95 * len(fn_list)), replace=False)
@@ -195,21 +214,19 @@ if __name__ == "__main__":
     print('training sets:\t\t', len(fn_train_list))
     print('validation sets:\t', len(fn_val_list))
 
-    # actor_learning_rate = 0.000001
-    actor_learning_rate = 0.00001
-    critic_learning_rate = 0.0005
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.0001
 
     # actor_lstm_units = 64
     actor_lstm_units = 32
     critic_lstm_units = 64
 
     tau = 0.001
-    # tau = 0.05
-    # tau = 0.2
 
     # lstm_horizons = [30, 20, 10, 5]
     lstm_horizons = [10, 20]
     # LSTM_HORIZON = 30
+
 
     for LSTM_HORIZON in lstm_horizons:
         actor_fn = None
@@ -229,12 +246,18 @@ if __name__ == "__main__":
             with graph.as_default():
                 tf.python.keras.backend.set_session(session)
 
+                # initialize the encoder
+                encoder = Encoder(
+                    session,
+                )
+
                 critic = CriticRDPG(
                     session, 
                     learning_rate=critic_learning_rate,
                     lstm_units=critic_lstm_units,
                     critic_fn=critic_fn,
                     critic_target_fn=critic_target_fn,
+                    lstm_horizon=LSTM_HORIZON
                     )
 
                 actor = ActorRDPG(
@@ -243,9 +266,15 @@ if __name__ == "__main__":
                     lstm_units=actor_lstm_units,
                     actor_fn=actor_fn,
                     actor_target_fn=actor_target_fn,
+                    lstm_horizon=LSTM_HORIZON
                     )
 
                 session.run(tf.compat.v1.global_variables_initializer())
+                encoder.load_model(
+                    './trained_encoders/'+'encoder_2020-05-04 18:40:59.673265',
+                    './trained_encoders/'+'encoder_DECODER2020-05-04 18:40:59.673290',
+                )
+                encoder.get_weight_check()
 
                 if actor_fn is not None:
                     actor.load_model(actor_fn, actor_target_fn)
@@ -258,11 +287,12 @@ if __name__ == "__main__":
                     session, 
                     actor, 
                     critic,
+                    encoder,
                     tau_actor=tau,
                     tau_critic=tau,
                     )
 
-                for i in range(0, 60000):
+                for i in range(0, 400000):
                     # training loss
                     idx = np.random.randint(len(fn_train_list))
                     with open(data_dir + fn_train_list[idx], 'rb') as f:
@@ -279,14 +309,14 @@ if __name__ == "__main__":
                     for j in range(len(l)):
                         loss_train.append(l[j])
 
-                    if i % 100 == 0:
+                    if i % 10000 == 0:
                         print('\n----------------------')
                         print(fn_train_list[idx])
                         print('iter:\t\t', i)
                         print('loss:\t\t', loss_train[-1])
                         display_act=True
 
-                    if i % 5000 == 0 and i > 0:
+                    if i % 20000 == 0 and i > 0:
                         loss_train_plot = [loss_train[i] for i in range(0, len(loss_train))]
                         loss_train_plot = np.convolve(np.array(loss_train_plot), np.ones(40), 'valid') / 40
                         plt.plot(loss_train_plot, label="30")

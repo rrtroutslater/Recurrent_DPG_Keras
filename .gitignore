@@ -8,3 +8,4 @@
 *.bag
 
 /RDPG/trained_models
+/RDPG/trained_encoders

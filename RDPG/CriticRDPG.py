@@ -7,7 +7,8 @@ import h5py
 class CriticRDPG(ACBase):
     def __init__(self,
                  session,
-                 obs_dim=[16, 90, 3],
+                #  obs_dim=[16, 90, 3],
+                 obs_dim=192,
                  act_dim=3,
                  learning_rate=0.001,
                  training=True,
@@ -123,29 +124,45 @@ class CriticRDPG(ACBase):
         h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h_"+net_type)
         c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c_"+net_type)
 
-        act_in = tf.keras.layers.Input(shape=[None, self.act_dim], name="act_in")
-        obs_in = tf.keras.layers.Input(
-            shape=[None, self.obs_dim[0], self.obs_dim[1], self.obs_dim[2]], 
-            name="obs_in"
-        )
 
-        feature = make_encoder_net(
-            obs_in, 
-            test_mode=self.test_mode, 
-            name="critic_"+net_type
-        )
-        feature = tf.expand_dims(feature, axis=0)
+        act_in = tf.keras.layers.Input(shape=[None, self.act_dim], name="act_in")
+        obs_in = tf.keras.layers.Input(shape=[None, self.obs_dim], name="obs_in")
+
+        obs_desnse = keras.layers.Dense(
+            units=48,
+            activation='relu',
+            name="Q_obs_expand_"+net_type,
+        )(obs_in)
+        feature = tf.expand_dims(obs_desnse, axis=0)
+
+        # obs_in = tf.keras.layers.Input(
+        #     shape=[None, self.obs_dim[0], self.obs_dim[1], self.obs_dim[2]], 
+        #     name="obs_in"
+        # )
+
+        # feature = make_encoder_net(
+        #     obs_in, 
+        #     test_mode=self.test_mode, 
+        #     name="critic_"+net_type
+        # )
+        # feature = tf.expand_dims(feature, axis=0)
 
         act_expanded = keras.layers.Dense(
-            units=12,
-            activation="tanh",
+            units=16,
+            activation="relu",
+            # activation=None,
             name="Q_act_expand"+net_type,
         )(act_in)
+        act_obs_in = tf.concat([act_expanded, obs_in], axis=2)
 
-        # act_for_lstm = tf.expand_dims(act_in, axis=0)
-        # act_obs_in = tf.concat([act_for_lstm, feature], axis=2)
-        # act_obs_in = tf.concat([act_in, feature], axis=2)
-        act_obs_in = tf.concat([act_expanded, feature], axis=2)
+        # act_batch_norm = tf.keras.layers.BatchNormalization(
+        #     name="Q_act_batch_norm_"+net_type
+        # )(act_expanded)
+
+        # fetaure_batch_norm = tf.keras.layers.BatchNormalization(
+        #     name="Q_feature_batch_norm_"+net_type
+        # )(feature)
+        # act_obs_in = tf.concat([act_batch_norm, fetaure_batch_norm], axis=2)
 
         lstm_sequence, h, c = keras.layers.LSTM(
             units=self.lstm_units,
@@ -155,15 +172,23 @@ class CriticRDPG(ACBase):
             return_state=True,
             stateful=False,
             name="lstm_critic_"+net_type,
-            recurrent_dropout=0.02,
-            dropout=0.02,
+            # recurrent_dropout=0.02,
+            # dropout=0.02,
         )(act_obs_in, initial_state=[h_ph, c_ph])
+
+        pre_q = keras.layers.Dense(
+            units=8,
+            activation=None,
+            name="Q_pre_"+net_type,
+        )(lstm_sequence)
 
         q = keras.layers.Dense(
             units=1,
-            activation='relu',
+            # activation='relu',
+            activation=keras.layers.LeakyReLU(alpha=0.3),
             name="Q_"+net_type,
-        )(lstm_sequence)
+        # )(lstm_sequence)
+        )(pre_q)
 
         model = keras.Model(inputs=[act_in, obs_in], outputs=[q, h, c])
         return model, act_in, obs_in, q, lstm_sequence, h, c, h_ph, c_ph
