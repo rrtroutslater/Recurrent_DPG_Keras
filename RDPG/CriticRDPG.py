@@ -1,6 +1,5 @@
 from __future__ import print_function
 from ACBase import *
-from EncoderNet import *
 import matplotlib.pyplot as plt
 import h5py
 
@@ -66,30 +65,16 @@ class CriticRDPG(ACBase):
         self.grad_step = self.optimizer.apply_gradients(
             zip(self.dL_dWq, self.net_weights),
         )
-
-        # self.sess.run(tf.compat.v1.global_variables_initializer())
-
-        # start by copying all weights into target network
-        # self.update_target_net(copy_all=True)
         return
 
     def reset_hidden_states(self,):
-        # self.h_prev = np.ones(shape=(1, self.lstm_units))
-        # self.c_prev = np.ones(shape=(1, self.lstm_units))
-        # self.h_prev_t = np.ones(shape=(1, self.lstm_units))
-        # self.c_prev_t = np.ones(shape=(1, self.lstm_units))
         self.h_prev = np.zeros(shape=(1, self.lstm_units))
         self.c_prev = np.zeros(shape=(1, self.lstm_units))
         self.h_prev_t = np.zeros(shape=(1, self.lstm_units))
         self.c_prev_t = np.zeros(shape=(1, self.lstm_units))
-        # self.h_prev = np.random.randn(1, self.lstm_units)
-        # self.c_prev = np.random.randn(1, self.lstm_units)
-        # self.h_prev_t = np.random.randn(1, self.lstm_units)
-        # self.c_prev_t = np.random.randn(1, self.lstm_units)
         return
 
     def get_loss(self, act, obs, y):
-        # loss = self.net.test_on_batch([act, obs], y=y)
         loss = self.sess.run(
             self.loss,
             feed_dict={
@@ -135,18 +120,6 @@ class CriticRDPG(ACBase):
         )(obs_in)
         feature = tf.expand_dims(obs_desnse, axis=0)
 
-        # obs_in = tf.keras.layers.Input(
-        #     shape=[None, self.obs_dim[0], self.obs_dim[1], self.obs_dim[2]], 
-        #     name="obs_in"
-        # )
-
-        # feature = make_encoder_net(
-        #     obs_in, 
-        #     test_mode=self.test_mode, 
-        #     name="critic_"+net_type
-        # )
-        # feature = tf.expand_dims(feature, axis=0)
-
         act_expanded = keras.layers.Dense(
             units=16,
             activation="relu",
@@ -154,15 +127,6 @@ class CriticRDPG(ACBase):
             name="Q_act_expand"+net_type,
         )(act_in)
         act_obs_in = tf.concat([act_expanded, obs_in], axis=2)
-
-        # act_batch_norm = tf.keras.layers.BatchNormalization(
-        #     name="Q_act_batch_norm_"+net_type
-        # )(act_expanded)
-
-        # fetaure_batch_norm = tf.keras.layers.BatchNormalization(
-        #     name="Q_feature_batch_norm_"+net_type
-        # )(feature)
-        # act_obs_in = tf.concat([act_batch_norm, fetaure_batch_norm], axis=2)
 
         lstm_sequence, h, c = keras.layers.LSTM(
             units=self.lstm_units,
@@ -378,7 +342,6 @@ class CriticRDPG(ACBase):
         take a gradient step on critic function
         """
         losses = []
-
         # print('WEIGHTS in train critic BEFORE:\n', self.net_weights[0].eval(self.sess)[0][0)
 
         _ = self.sess.run(
@@ -403,7 +366,6 @@ class CriticRDPG(ACBase):
             }
         )
         losses.append(loss[0])
-
         # print('WEIGHTS in train critic AFTER:\n', self.net_weights[0].eval(self.sess)[0][0][0])
         return losses
 
@@ -476,5 +438,4 @@ if __name__ == "__main__":
         plt.plot(loss)
         plt.show()
         # print(loss)
-
     pass

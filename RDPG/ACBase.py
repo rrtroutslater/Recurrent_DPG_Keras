@@ -92,16 +92,8 @@ class ACBase():
 
         self.net_weights = self.net.trainable_weights
         self.net_t_weights = self.net_t.trainable_weights
-        print('WEIGHTS AFTER RESTORE:\n', self.net_weights[0].eval(self.sess)[0][0][0])
-
-        # print("----------------------------------------------\nWEIGHTS AFTER RESTORE:\n")
-        # for w in self.net_weights:
-        #     print(w)
-        #     print(w.eval(self.sess)[0])
-        # print("----------------------------------------------\nTARGET WEIGHTS AFTER RESTORE:\n")
-        # for w in self.net_t_weights:
-        #     print(w)
-        #     print(w.eval(self.sess)[0])
+        print('WEIGHTS AFTER RESTORE:')
+        self.get_weight_check()
         return
 
     def save_model(self, 
@@ -114,32 +106,30 @@ class ACBase():
         """
         save the network and target network to file, return filenames of saved model
         """
-        print('WEIGHTS BEFORE SAVE:\n', self.net_weights[0].eval(self.sess)[0][0][0])
-        # print("----------------------------------------------\nWEIGHTS BEFORE SAVE:\n")
-        # for w in self.net_weights:
-        #     print(w)
-        #     print(w.eval(self.sess)[0])
-        # print("----------------------------------------------\nTARGET WEIGHTS BEFORE SAVE:\n")
-        # for w in self.net_t_weights:
-        #     print(w)
-        #     print(w.eval(self.sess)[0])
+        print('WEIGHTS BEFORE SAVE:')
+        self.get_weight_check()
         
         if net_fname == "":
-            # net_fname = "./trained_models/" + self.net_type + "_" + str(self.lstm_horizon) + "_" + learning_rate + "_" + tau
-            net_fname = "./trained_models/" + self.net_type + "_" + str(self.lstm_horizon) \
-                + str(datetime.datetime.now()) \
-                + "_" + lstm_horizon
+            net_fname = "./trained_models/4/" + self.net_type + "_" + str(self.lstm_horizon) \
+                + "_" + lstm_horizon +"final"#\
+                # + str(datetime.datetime.now()) \
         if net_t_fname == "":
-            net_t_fname = "./trained_models/" + self.net_type + "_target_" + str(self.lstm_horizon) \
+            net_t_fname = "./trained_models/4/" + self.net_type + "_target_" + str(self.lstm_horizon) \
                 + "_" + learning_rate + "_" + tau + "_" \
-                + str(datetime.datetime.now()) \
-                + "_" + lstm_horizon
+                + "_" + lstm_horizon +"final"#\
+                # + str(datetime.datetime.now()) \
 
         self.net.save_weights(net_fname, save_format='tf')
         self.net_t.save_weights(net_t_fname, save_format='tf')
-        # self.net.save_weights(net_fname, save_format='h5')
-        # self.net_t.save_weights(net_t_fname, save_format='h5')
+
+        print('WEIGHTS AFTER SAVE:')
+        self.get_weight_check()
+
         return net_fname, net_t_fname
+
+    def get_weight_check(self,):
+        print('EXAMPLE WEIGHTS:\n', self.net.get_weights()[0][0][0])
+        return
 
     def update_target_net(self,
             tau=0.3,
@@ -165,85 +155,10 @@ class ACBase():
     def display_hidden_state(self,):
         print('current hidden state:\n', self.h_prev)
         print('current carry state:\n', self.c_prev)
+        return
 
     def display_target_hidden_state(self,):
         print('current TARGET hidden state:\n', self.h_prev_t)
         print('current TARGET carry state:\n', self.c_prev_t)
+        return
 
-    # def load_model(self, 
-    #         net_fname,
-    #         net_t_fname,
-    #     ):
-    #     """
-    #     load network weights from file
-
-    #     inputs:
-    #         net_t: filename of saved model
-    #         net_t_fname: filename of saved target model
-    #     """
-    #     print('\nLOADING CRITIC MODEL ........')
-    #     print('FILENAME:\n', net_fname)
-    #     print('WEIGHTS BEFORE RESTORE:\n', self.net_weights[0].eval(self.sess)[0][0][0])
-
-    #     with h5py.File(net_fname, "r") as f:
-    #         for k in f.keys():
-    #             for w in self.net.trainable_weights:
-    #                 if k in w.name:
-    #                     for j in f[k].items():
-    #                         # print(j)
-    #                         for elem in j[1].items():
-    #                             # print(np.array(elem[1]))
-    #                             if 'bias' in w.name and w.get_shape() == np.array(elem[1]).shape:
-    #                                 self.sess.run(
-    #                                     w.assign(np.array(elem[1]))
-    #                                 )
-    #                             elif 'kernel' in w.name and w.get_shape() == np.array(elem[1]).shape:
-    #                                 self.sess.run(
-    #                                     w.assign(np.array(elem[1]))
-    #                                 )
-
-    #     with h5py.File(net_t_fname, "r") as f:
-    #         for k in f.keys():
-    #             for w in self.net_t.trainable_weights:
-    #                 if k in w.name:
-    #                     for j in f[k].items():
-    #                         for elem in j[1].items():
-    #                             if 'bias' in w.name and w.get_shape() == np.array(elem[1]).shape:
-    #                                 self.sess.run(
-    #                                     w.assign(np.array(elem[1]))
-    #                                 )
-    #                             elif 'kernel' in w.name and w.get_shape() == np.array(elem[1]).shape:
-    #                                 self.sess.run(
-    #                                     w.assign(np.array(elem[1]))
-    #                                 )
-
-    #     print('\nWEIGHTS AFTER RESTORE:\n', self.net_weights[0].eval(self.sess)[0][0][0])
-    #     # print('MODEL SUCCESSFULLY LOADED')
-    #     return
-
-    # def save_model(self, 
-    #         net_fname="",
-    #         net_t_fname="",
-    #         learning_rate="",
-    #         tau="",
-    #         ):
-    #     """
-    #     save the network and target network to file, return filenames of saved model
-    #     """
-    #     # tf.keras.backend.manual_variable_initialization(True)
-
-    #     if net_fname == "":
-    #         # net_fname = "./trained_models/" + self.net_type + "_" + str(self.lstm_horizon) + "_" + learning_rate + "_" + tau
-    #         net_fname = "./trained_models/" + self.net_type + "_" + str(self.lstm_horizon) \
-    #             + "_" + learning_rate + "_" + tau + "_" + str(datetime.datetime.now())
-    #     if net_t_fname == "":
-    #         net_t_fname = "./trained_models/" + self.net_type + "_target_" + str(self.lstm_horizon) \
-    #             + "_" + learning_rate + "_" + tau + "_" + str(datetime.datetime.now())
-
-    #     print('\nSAVING CRITIC MODEL.....')
-    #     print("FILENAME:\n", net_fname)
-    #     print("WEIGHTS BEFORE SAVE:\n", self.net_weights[0].eval(self.sess)[0][0][0])
-
-    #     self.net.save_weights(net_fname, save_format='h5')
-    #     self.net_t.save_weights(net_t_fname, save_format='h5')
-    #     return net_fname, net_t_fname

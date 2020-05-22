@@ -1,6 +1,5 @@
 from __future__ import print_function
 from ACBase import *
-from EncoderNet import *
 import math
 import h5py
 
@@ -61,25 +60,13 @@ class ActorRDPG(ACBase):
         self.grad_step = self.optimizer.apply_gradients(
             zip(self.dQ_dWa, self.net_weights)
         )
-
-        # self.sess.run(tf.compat.v1.global_variables_initializer())
-
-        # start by copying all weights into target network
         return
 
     def reset_hidden_states(self,):
-        # self.h_prev = np.ones(shape=(1, self.lstm_units))
-        # self.c_prev = np.ones(shape=(1, self.lstm_units))
-        # self.h_prev_t = np.ones(shape=(1, self.lstm_units))
-        # self.c_prev_t = np.ones(shape=(1, self.lstm_units))
         self.h_prev = np.zeros(shape=(1, self.lstm_units))
         self.c_prev = np.zeros(shape=(1, self.lstm_units))
         self.h_prev_t = np.zeros(shape=(1, self.lstm_units))
         self.c_prev_t = np.zeros(shape=(1, self.lstm_units))
-        # self.h_prev = np.random.randn(1, self.lstm_units)
-        # self.c_prev = np.random.randn(1, self.lstm_units)
-        # self.h_prev_t = np.random.randn(1, self.lstm_units)
-        # self.c_prev_t = np.random.randn(1, self.lstm_units)
         return
 
     def make_act_net(self, net_type):
@@ -104,28 +91,13 @@ class ActorRDPG(ACBase):
         h_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="h_"+net_type)
         c_ph = tf.keras.backend.placeholder(shape=[1, self.lstm_units], name="c_"+net_type)
 
-        # obs_in = keras.layers.Input(
-        #     shape=[None, self.obs_dim[0], self.obs_dim[1], self.obs_dim[2]],
-        # )
         obs_in = tf.keras.layers.Input(shape=[None, self.obs_dim], name="obs_in")
-
-        # feature = make_encoder_net(
-        #     obs_in, 
-        #     test_mode=self.test_mode, 
-        #     name="actor_"+net_type,
-        # )
 
         feature = keras.layers.Dense(
             units=48,
             activation='relu',
             name="act_obs_expand_"+net_type,
         )(obs_in)
-        # feature = tf.expand_dims(obs_dense, axis=0)
-
-        # feature_batch_norm = tf.keras.layers.BatchNormalization(
-        #     axis=0,
-        #     name="act_feature_batch_nrom_"+net_type,
-        # )(feature)
 
         lstm_sequence, h, c = tf.keras.layers.LSTM(
             units=self.lstm_units,
@@ -139,9 +111,6 @@ class ActorRDPG(ACBase):
             return_state=True,
             stateful=False,
             name="lstm_act_"+net_type,
-            # recurrent_dropout=0.02,
-            # dropout=0.02,
-        # )(feature_batch_norm, initial_state=[h_ph, c_ph])
         )(feature, initial_state=[h_ph, c_ph])
 
         pre_act = keras.layers.Dense(
@@ -150,17 +119,11 @@ class ActorRDPG(ACBase):
             name="pre_act_"+net_type,
         )(lstm_sequence)
 
-        # pre_act_batch_norm = keras.layers.BatchNormalization(
-        #     axis=0,
-        #     name="pre_act_batch_norm_"+net_type,
-        # )(pre_act)
-
         act = keras.layers.Dense(
             units=self.act_dim,
             activation="tanh",
             name="act_"+net_type
         )(lstm_sequence)
-        # )(pre_act_batch_norm)
 
         if 1:
             print('feature shape:\t', feature.get_shape())

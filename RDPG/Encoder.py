@@ -42,12 +42,10 @@ class Encoder():
         )
         return
 
-    def get_obs(self, img_in):
+    def get_obs(self, img_in, display=False):
         """
         returs flattened features extracted from encoder
         """
-        print(img_in.shape)
-
         if len(img_in.shape) > 4:
             img = np.reshape(
                 img_in,
@@ -68,7 +66,7 @@ class Encoder():
                 [img_in.shape[0], img_in.shape[1], obs.shape[1]]
             )
 
-        if 0:
+        if display ==True:
             fig, ax = plt.subplots(obs_3d[0].shape[2],1)
             for k in range(len(ax)):
                 ax[k].imshow(obs_3d[0][:,:,k], cmap='gray')
@@ -76,7 +74,6 @@ class Encoder():
             plt.show()
 
             img_out = self.encoder_decoder.predict(img_in[0])[0]
-            print(img_out.shape)
 
             fig, ax = plt.subplots(3,2)
             ax[0,0].imshow(img_in[0][0][:,:,0], cmap='gray')
@@ -129,9 +126,15 @@ class Encoder():
             strides=[1,1],
             padding='same',
             activation=keras.layers.LeakyReLU(alpha=0.3),
+            # activation='sigmoid',
         )(conv_4)
 
+        bn = keras.layers.BatchNormalization(
+            axis=-1,
+        )(conv_5)
+
         feature = conv_5
+        # feature = bn
 
         if self.test_mode:
             print('obs shape:\t', img_in.get_shape())
@@ -164,21 +167,24 @@ class Encoder():
             kernel_size=[3,3],
             strides=[2,2],
             padding='same',
-            activation=tf.nn.relu,
+            activation=keras.layers.LeakyReLU(alpha=0.3)
+            # activation=tf.nn.relu,
         )(upconv_1)
         upconv_3 = keras.layers.Conv2DTranspose(
             filters=8,
             kernel_size=[3,5],
             strides=[2,2],
             padding='same',
-            activation=tf.nn.relu,
+            activation=keras.layers.LeakyReLU(alpha=0.3)
+            # activation=tf.nn.relu,
         )(upconv_2)
         upconv_4 = keras.layers.Conv2DTranspose(
             filters=3,
             kernel_size=[3,3],
             strides=[1,1],
             padding='same',
-            activation=tf.nn.relu,
+            # activation=tf.nn.relu,
+            activation='sigmoid',
         )(upconv_3)
 
         output = upconv_4[:,:,:90,:]
@@ -358,11 +364,13 @@ def train():
         for j in range(0, len(l_val)):
             loss_val.append(l_val[j])
 
-        if i > 0 and i % 150 == 0:
+        # if i > 0 and i % 150 == 0:
+        if i > 0 and i % 100 == 0:
             encoder_fn, encoder_decoder_fn = encoder.save_model()
             # encoder.test_mode = True
 
-        if i > 0 and i % 150 == 0:
+        # if i > 0 and i % 15 == 0:
+        if i > 0 and i % 100 == 0:
             encoder.test_mode = True
 
         if i > 0 and i % 15 == 0:
@@ -380,7 +388,7 @@ def train():
 
 
 if __name__ == "__main__":
-    # train()
+    train()
 
     session = tf.compat.v1.Session()
     encoder = Encoder(
@@ -395,13 +403,11 @@ if __name__ == "__main__":
         encoder.get_obs(img)
 
     # test model loading
-    if 1:
+    if 0:
         encoder.load_model(
             './trained_encoders/'+'encoder_2020-05-04 18:40:59.673265',
             './trained_encoders/'+'encoder_DECODER2020-05-04 18:40:59.673290',
         )
-
-
     pass
 
 
